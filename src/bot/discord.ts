@@ -31,7 +31,7 @@ const client = new Client({
 });
 
 // Direct URL to the logo
-const LOGO_URL = 'https://raw.githubusercontent.com/BUX-DAO/bux-poker/main/assets/BUX_logo_small.png';
+const LOGO_URL = 'https://raw.githubusercontent.com/Tom-BUXDAO/bux-poker/main/assets/BUX_logo_small.png';
 
 // Tournament creation options
 const TOURNAMENT_OPTIONS = {
