@@ -44,9 +44,9 @@ const BLIND_STRUCTURE = [
   { small: 5000, big: 10000 },
 ];
 
-interface PageProps {
+type PageProps = {
   params: { id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Record<string, string | string[] | undefined>;
 }
 
 export default async function TournamentLobby({ params, searchParams }: PageProps) {
