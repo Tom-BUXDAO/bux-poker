@@ -20,13 +20,12 @@ const BLIND_STRUCTURE = [
   { small: 5000, big: 10000 },
 ];
 
-export default async function TournamentLobby({
-  params,
-  searchParams,
-}: {
+interface PageProps {
   params: { id: string };
   searchParams: { [key: string]: string | string[] | undefined };
-}) {
+}
+
+export default async function TournamentLobby({ params, searchParams }: PageProps) {
   const { id } = params;
   const tournament = await getTournamentById(id);
   const session = await getServerSession();
