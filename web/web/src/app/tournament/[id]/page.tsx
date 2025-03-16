@@ -3,11 +3,9 @@ import { CalendarDays, Users, Coins, Timer, ChevronRight, LayoutGrid } from 'luc
 import Image from 'next/image';
 import { getServerSession } from 'next-auth';
 
-interface PageProps {
-  params: {
-    id: string;
-  };
-  searchParams: { [key: string]: string | string[] | undefined };
+type PageProps = {
+  params: { id: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
 }
 
 const BLIND_STRUCTURE = [
