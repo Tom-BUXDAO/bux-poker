@@ -3,11 +3,6 @@ import { CalendarDays, Users, Coins, Timer, ChevronRight, LayoutGrid } from 'luc
 import Image from 'next/image';
 import { getServerSession } from 'next-auth';
 
-type PageProps = {
-  params: { id: string };
-  searchParams?: { [key: string]: string | string[] | undefined };
-}
-
 const BLIND_STRUCTURE = [
   { small: 10, big: 20 },
   { small: 20, big: 40 },
@@ -25,25 +20,13 @@ const BLIND_STRUCTURE = [
   { small: 5000, big: 10000 },
 ];
 
-function getTimeUntilStart(startTime: Date) {
-  const now = new Date();
-  const diff = startTime.getTime() - now.getTime();
-  
-  if (diff <= 0) return 'Tournament has started';
-  
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  
-  const parts = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  parts.push(`${minutes}m`);
-  
-  return `Starts in ${parts.join(' ')}`;
-}
-
-export default async function TournamentLobby({ params, searchParams }: PageProps) {
+export default async function TournamentLobby({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
   const { id } = params;
   const tournament = await getTournamentById(id);
   const session = await getServerSession();
@@ -309,6 +292,24 @@ export default async function TournamentLobby({ params, searchParams }: PageProp
       </div>
     </div>
   );
+}
+
+function getTimeUntilStart(startTime: Date) {
+  const now = new Date();
+  const diff = startTime.getTime() - now.getTime();
+  
+  if (diff <= 0) return 'Tournament has started';
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  
+  return `Starts in ${parts.join(' ')}`;
 }
 
 function getOrdinalSuffix(n: number): string {
