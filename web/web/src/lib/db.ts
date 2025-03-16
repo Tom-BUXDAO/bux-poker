@@ -27,6 +27,27 @@ export function getPool() {
   return pool;
 }
 
+export async function getTournaments() {
+  const pool = getPool();
+  const query = `
+    SELECT 
+      t.*,
+      COUNT(tr.user_id) as registered_players
+    FROM tournaments t
+    LEFT JOIN tournament_registrations tr ON t.id = tr.tournament_id
+    GROUP BY t.id
+    ORDER BY t.start_time DESC;
+  `;
+  
+  try {
+    const result = await pool.query(query);
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching tournaments:', error);
+    throw error;
+  }
+}
+
 export async function getTournamentById(tournamentId: string) {
   const pool = getPool();
   const query = `
