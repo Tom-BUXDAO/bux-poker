@@ -1,7 +1,7 @@
 import { getTournamentById } from '@/lib/db';
 import { CalendarDays, Users, Coins, Timer, ChevronRight, LayoutGrid } from 'lucide-react';
 import Image from 'next/image';
-import { getServerSession } from 'next-auth';
+import { createServerSupabaseClient } from '@/lib/supabase-server';
 
 function getTimeUntilStart(startTime: Date) {
   const now = new Date();
@@ -50,9 +50,11 @@ interface PageProps {
 }
 
 export default async function TournamentLobby({ params, searchParams }: PageProps) {
-  const { id } = params;
+  const id = (await Promise.resolve(params)).id;
   const tournament = await getTournamentById(id);
-  const session = await getServerSession();
+  
+  const supabase = await createServerSupabaseClient();
+  const { data: { session } } = await supabase.auth.getSession();
 
   if (!tournament) {
     return (

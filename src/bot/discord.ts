@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 import { resolve } from 'path';
-import { initializeDatabase } from '../database/connection';
+import { supabase } from '../database/supabase';
 
 // Load environment variables from root .env file
 config({ path: resolve(__dirname, '../../.env') });
@@ -415,9 +415,10 @@ export async function initializeBot() {
   }
 
   try {
-    // Initialize the database first
-    await initializeDatabase();
-    console.log('Database initialized successfully');
+    // Test Supabase connection
+    const { data, error } = await supabase.from('users').select('count').limit(1);
+    if (error) throw error;
+    console.log('Successfully connected to Supabase');
     
     await client.login(process.env.DISCORD_TOKEN);
     console.log('Bot initialized successfully');

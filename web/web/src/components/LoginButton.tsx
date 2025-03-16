@@ -1,11 +1,28 @@
 'use client';
 
-import { signIn } from 'next-auth/react';
+import { supabase } from '@/lib/supabase';
+import { usePathname } from 'next/navigation';
 
 export function LoginButton() {
+  const pathname = usePathname();
+  const tournamentId = pathname.split('/').pop();
+
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback${tournamentId && pathname.includes('/tournament/') ? `?tournament_id=${tournamentId}` : ''}`
+      }
+    });
+
+    if (error) {
+      console.error('Error logging in:', error.message);
+    }
+  };
+
   return (
     <button
-      onClick={() => signIn('discord')}
+      onClick={handleLogin}
       className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold 
         bg-[#5865F2] hover:bg-[#4752C4] text-white transition-colors"
     >
