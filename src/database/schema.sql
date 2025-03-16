@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     discord_id VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(255) NOT NULL,
+    discord_avatar_url VARCHAR(512),
     total_chips INTEGER DEFAULT 0,
     games_played INTEGER DEFAULT 0,
     games_won INTEGER DEFAULT 0,
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
     players_per_table INTEGER NOT NULL,
     starting_chips INTEGER NOT NULL,
     blind_round_minutes INTEGER NOT NULL,
+    max_players INTEGER NOT NULL DEFAULT 100,
     status VARCHAR(50) DEFAULT 'PENDING', -- PENDING, REGISTERING, STARTING, ACTIVE, COMPLETED
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -42,8 +44,9 @@ CREATE TABLE IF NOT EXISTS tournament_registrations (
     registration_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     table_number INTEGER,
     seat_number INTEGER,
+    chip_count INTEGER,
     final_position INTEGER,
-    status VARCHAR(50) DEFAULT 'REGISTERED', -- REGISTERED, PLAYING, ELIMINATED, WINNER
+    status VARCHAR(50) DEFAULT 'REGISTERED', -- REGISTERED, READY, PLAYING, ELIMINATED, WINNER
     PRIMARY KEY (tournament_id, user_id)
 );
 

@@ -1,0 +1,12 @@
+{
+  "buildCommand": "next build",
+  "devCommand": "next dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "outputDirectory": ".next",
+  "regions": ["sfo1"],
+  "env": {
+    "NEXT_PUBLIC_APP_URL": "https://bux-poker.vercel.app",
+    "NODE_ENV": "production"
+  }
+} 

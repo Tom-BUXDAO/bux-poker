@@ -1,3 +1,10 @@
+import { config } from 'dotenv';
+import { resolve } from 'path';
+import { initializeDatabase } from '../database/connection';
+
+// Load environment variables from root .env file
+config({ path: resolve(__dirname, '../../.env') });
+
 import { 
   Client, 
   GatewayIntentBits, 
@@ -11,7 +18,10 @@ import {
   EmbedBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  ChannelType
+  ChannelType,
+  Message,
+  Interaction,
+  StringSelectMenuInteraction
 } from 'discord.js';
 import { 
   createUser, 
@@ -19,7 +29,9 @@ import {
   getTournamentById,
   registerPlayerForTournament,
   updateTournamentMessage,
-  updateTournamentStatus
+  updateTournamentStatus,
+  unregisterPlayerFromTournament,
+  isRegistered
 } from '../database/db';
 
 const client = new Client({
@@ -37,7 +49,8 @@ const LOGO_URL = 'https://raw.githubusercontent.com/Tom-BUXDAO/bux-poker/main/as
 const TOURNAMENT_OPTIONS = {
   playersPerTable: [6, 8],
   startingChips: [1000, 1500, 2000, 2500, 3000],
-  blindLevels: Array.from({length: 15}, (_, i) => i + 1) // 1-15 minutes
+  blindLevels: Array.from({length: 15}, (_, i) => i + 1), // 1-15 minutes
+  maxPlayers: [8, 16, 32, 64, 100]
 };
 
 // Track active tournament creations
@@ -116,7 +129,7 @@ function createOptionsMenu(type: string, options: number[], placeholder: string)
 }
 
 // Single event handler for messages
-client.on(Events.MessageCreate, async (message) => {
+client.on(Events.MessageCreate, async (message: Message) => {
   if (message.author.bot || message.content.toLowerCase() !== '!poker') return;
 
   console.log('Received !poker command from', message.author.username);
@@ -144,29 +157,30 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// Interaction handler
-client.on(Events.InteractionCreate, async (interaction) => {
+// Interaction handler for select menus
+client.on(Events.InteractionCreate, async (interaction: Interaction) => {
   if (!interaction.isStringSelectMenu()) return;
 
-  const userId = interaction.user.id;
+  const selectInteraction = interaction as StringSelectMenuInteraction;
+  const userId = selectInteraction.user.id;
   const creation = activeCreations.get(userId);
   if (!creation) return;
 
   try {
-    switch (interaction.customId) {
+    switch (selectInteraction.customId) {
       case 'date': {
-        creation.date = interaction.values[0];
+        creation.date = selectInteraction.values[0];
         creation.step = 'time';
-        await interaction.update({
+        await selectInteraction.update({
           content: '**Select tournament time:**',
           components: createTimeOptions()
         });
         break;
       }
       case 'hour': {
-        creation.hour = parseInt(interaction.values[0]);
+        creation.hour = parseInt(selectInteraction.values[0]);
         if (!creation.minute) {
-          await interaction.update({
+          await selectInteraction.update({
             content: '**Select minute:**',
             components: createTimeOptions().slice(1) // Show only minute selector
           });
@@ -174,7 +188,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           creation.step = 'players';
           const date = new Date(`${creation.date}T${creation.hour.toString().padStart(2, '0')}:${creation.minute.toString().padStart(2, '0')}:00`);
           creation.startTime = date;
-          await interaction.update({
+          await selectInteraction.update({
             content: '**Select players per table:**',
             components: createOptionsMenu('players', TOURNAMENT_OPTIONS.playersPerTable, 'Select players per table')
           });
@@ -182,9 +196,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         break;
       }
       case 'minute': {
-        creation.minute = parseInt(interaction.values[0]);
+        creation.minute = parseInt(selectInteraction.values[0]);
         if (!creation.hour) {
-          await interaction.update({
+          await selectInteraction.update({
             content: '**Select hour:**',
             components: createTimeOptions().slice(0, 1) // Show only hour selector
           });
@@ -192,7 +206,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           creation.step = 'players';
           const date = new Date(`${creation.date}T${creation.hour.toString().padStart(2, '0')}:${creation.minute.toString().padStart(2, '0')}:00`);
           creation.startTime = date;
-          await interaction.update({
+          await selectInteraction.update({
             content: '**Select players per table:**',
             components: createOptionsMenu('players', TOURNAMENT_OPTIONS.playersPerTable, 'Select players per table')
           });
@@ -200,42 +214,52 @@ client.on(Events.InteractionCreate, async (interaction) => {
         break;
       }
       case 'players': {
-        creation.playersPerTable = parseInt(interaction.values[0]);
+        creation.playersPerTable = parseInt(selectInteraction.values[0]);
         creation.step = 'chips';
-        await interaction.update({
+        await selectInteraction.update({
           content: '**Select starting chips:**',
           components: createOptionsMenu('chips', TOURNAMENT_OPTIONS.startingChips, 'Select starting chips')
         });
         break;
       }
       case 'chips': {
-        creation.startingChips = parseInt(interaction.values[0]);
+        creation.startingChips = parseInt(selectInteraction.values[0]);
         creation.step = 'blinds';
-        await interaction.update({
+        await selectInteraction.update({
           content: '**Select blind level duration (minutes):**',
           components: createOptionsMenu('blinds', TOURNAMENT_OPTIONS.blindLevels, 'Select blind level duration')
         });
         break;
       }
       case 'blinds': {
+        creation.blindLevels = parseInt(selectInteraction.values[0]);
+        creation.step = 'maxPlayers';
+        await selectInteraction.update({
+          content: '**Select maximum number of players:**',
+          components: createOptionsMenu('maxPlayers', TOURNAMENT_OPTIONS.maxPlayers, 'Select max players')
+        });
+        break;
+      }
+      case 'maxPlayers': {
         try {
-          const blinds = parseInt(interaction.values[0]);
+          const maxPlayers = parseInt(selectInteraction.values[0]);
           
           // First acknowledge the interaction immediately
-          await interaction.update({
+          await selectInteraction.update({
             content: 'Creating tournament...',
             components: []
           });
 
-          const user = await createUser(userId, interaction.user.username);
+          const user = await createUser(userId, selectInteraction.user.username);
           
           const tournament = await createTournament(
             user.id,
             creation.startTime,
             creation.playersPerTable,
             creation.startingChips,
-            blinds,
-            creation.channelId
+            creation.blindLevels,
+            creation.channelId,
+            maxPlayers
           );
 
           // Convert to Unix timestamp (in seconds)
@@ -268,7 +292,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               },
               { 
                 name: '⏱️ Blind Levels', 
-                value: `${blinds} minutes`, 
+                value: `${creation.blindLevels} minutes`, 
                 inline: false 
               }
             );
@@ -278,12 +302,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setLabel('Register')
             .setStyle(ButtonStyle.Success);
 
+          const lobbyButton = new ButtonBuilder()
+            .setCustomId(`lobby_${tournament.id}`)
+            .setLabel('Tournament Lobby')
+            .setStyle(ButtonStyle.Primary);
+
           const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
-            .addComponents(registerButton);
+            .addComponents(registerButton, lobbyButton);
 
           // Send the tournament message
-          if (interaction.channel?.type === ChannelType.GuildText) {
-            const channel = interaction.channel as TextChannel;
+          if (selectInteraction.channel?.type === ChannelType.GuildText) {
+            const channel = selectInteraction.channel as TextChannel;
             
             try {
               await channel.send({
@@ -305,8 +334,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           activeCreations.delete(userId);
         } catch (error) {
           console.error('Error in tournament creation:', error);
-          if (!interaction.replied) {
-            await interaction.followUp({
+          if (!selectInteraction.replied) {
+            await selectInteraction.followUp({
               content: 'An error occurred while creating the tournament. Please try again with !poker',
               ephemeral: true
             });
@@ -318,7 +347,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (error) {
     console.error('Error in tournament creation:', error);
-    await interaction.update({
+    await selectInteraction.update({
       content: 'An error occurred. Please try again with !poker',
       components: []
     });
@@ -327,79 +356,56 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // Button interaction handler
-client.on(Events.InteractionCreate, async (interaction) => {
+client.on(Events.InteractionCreate, async (interaction: Interaction) => {
   if (!interaction.isButton()) return;
-  
-  const [action, tournamentId] = interaction.customId.split('_');
-  if (action !== 'register') return;
 
   try {
-    const tournament = await getTournamentById(tournamentId);
-    if (!tournament) {
+    const [action, tournamentId] = interaction.customId.split('_');
+    const user = interaction.user;
+    const avatarUrl = user.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true });
+
+    if (action === 'register') {
+      // Create or update user first
+      const dbUser = await createUser(user.id, user.username, avatarUrl);
+      
+      // Then register for tournament using the UUID from the database
+      await registerPlayerForTournament(tournamentId, dbUser.id, user.id);
+      await interaction.reply({ content: 'You have been registered for the tournament!', ephemeral: true });
+      
+      // Update tournament message
+      await updateTournamentMessage(tournamentId, interaction.message.id);
+    } else if (action === 'unregister') {
+      const success = await unregisterPlayerFromTournament(tournamentId, user.id);
+      if (success) {
+        await interaction.reply({ content: 'You have been unregistered from the tournament.', ephemeral: true });
+        await updateTournamentMessage(tournamentId, interaction.message.id);
+      } else {
+        await interaction.reply({ content: 'You were not registered for this tournament.', ephemeral: true });
+      }
+    } else if (action === 'lobby') {
+      const tournament = await getTournamentById(tournamentId);
+      if (!tournament) {
+        await interaction.reply({ content: 'Tournament not found.', ephemeral: true });
+        return;
+      }
+
+      const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
+        .addComponents(
+          new ButtonBuilder()
+            .setLabel('Open Tournament Lobby')
+            .setStyle(ButtonStyle.Link)
+            .setURL(`http://localhost:3000/tournament/${tournamentId}`)
+        );
+
       await interaction.reply({ 
-        content: 'Tournament not found.', 
+        content: '🎮 Click below to view the tournament lobby:',
+        components: [row],
         ephemeral: true 
       });
-      return;
     }
-
-    const discordId = interaction.user.id;
-    const user = await createUser(discordId, interaction.user.username);
-    
-    const result = await registerPlayerForTournament(tournamentId, user.id, discordId);
-    if (!result) {
-      await interaction.reply({ 
-        content: 'You are already registered for this tournament.', 
-        ephemeral: true 
-      });
-      return;
-    }
-
-    // Get updated tournament info
-    const updatedTournament = await getTournamentById(tournamentId);
-    const registeredPlayers = updatedTournament.registered_players || 0;
-
-    // Update the tournament message with new player count
-    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-    const playerField = embed.data.fields?.find(f => f.name === '👥 Players Registered');
-    if (playerField) {
-      playerField.value = registeredPlayers.toString();
-    }
-
-    // Keep the register button
-    const registerButton = new ButtonBuilder()
-      .setCustomId(`register_${tournamentId}`)
-      .setLabel('Register')
-      .setStyle(ButtonStyle.Success);
-
-    const newRow = new ActionRowBuilder<MessageActionRowComponentBuilder>()
-      .addComponents(registerButton);
-
-    try {
-      // Preserve the existing thumbnail URL
-      await interaction.update({
-        embeds: [embed],
-        components: [newRow]
-      });
-    } catch (error) {
-      console.error('Error updating tournament message:', error);
-      await interaction.update({
-        embeds: [embed.setThumbnail(null)],
-        components: [newRow]
-      });
-    }
-
-    await interaction.followUp({ 
-      content: 'Successfully registered for tournament!', 
-      ephemeral: true 
-    });
-
   } catch (error) {
-    console.error('Error handling registration:', error);
-    await interaction.reply({ 
-      content: 'An error occurred while registering. Please try again.', 
-      ephemeral: true 
-    });
+    console.error('Error handling button interaction:', error);
+    await interaction.reply({ content: 'An error occurred. Please try again.', ephemeral: true });
   }
 });
 
@@ -409,11 +415,23 @@ export async function initializeBot() {
   }
 
   try {
+    // Initialize the database first
+    await initializeDatabase();
+    console.log('Database initialized successfully');
+    
     await client.login(process.env.DISCORD_TOKEN);
     console.log('Bot initialized successfully');
     return client;
   } catch (error) {
-    console.error('Failed to initialize bot:', error);
+    console.error('Failed to initialize:', error);
     throw error;
   }
+}
+
+// Call initializeBot if this file is being run directly
+if (require.main === module) {
+  initializeBot().catch(error => {
+    console.error('Failed to start bot:', error);
+    process.exit(1);
+  });
 } 
