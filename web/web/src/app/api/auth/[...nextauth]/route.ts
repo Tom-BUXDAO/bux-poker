@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import DiscordProvider from 'next-auth/providers/discord';
-import { getPool } from '@/database/db';
+import { getPool } from '@/lib/db';
 
 const handler = NextAuth({
   providers: [
