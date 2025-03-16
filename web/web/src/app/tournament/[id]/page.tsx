@@ -44,12 +44,13 @@ const BLIND_STRUCTURE = [
   { small: 5000, big: 10000 },
 ];
 
-type PageProps = {
+export default async function TournamentLobby({
+  params,
+  searchParams,
+}: {
   params: { id: string };
-  searchParams: Record<string, string | string[] | undefined>;
-}
-
-export default async function TournamentLobby({ params, searchParams }: PageProps) {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
   const { id } = params;
   const tournament = await getTournamentById(id);
   const session = await getServerSession();
