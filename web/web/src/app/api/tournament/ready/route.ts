@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { getPool } from '@/database/db';
+import { getPool } from '@/lib/db';
 
 export async function POST(request: Request) {
   const pool = getPool();

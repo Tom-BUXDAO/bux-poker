@@ -1,4 +1,4 @@
-import { getTournamentById } from '@/database/db';
+import { getTournamentById } from '@/lib/db';
 import { CalendarDays, Users, Coins, Timer, ChevronRight, LayoutGrid } from 'lucide-react';
 import Image from 'next/image';
 import { getServerSession } from 'next-auth';
