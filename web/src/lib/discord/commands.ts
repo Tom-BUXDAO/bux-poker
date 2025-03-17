@@ -1,8 +1,8 @@
-import { APIInteraction } from 'discord-api-types/v10';
+import { APIChatInputApplicationCommandInteraction } from 'discord-api-types/v10';
 import { InteractionResponseType } from 'discord-api-types/v10';
 import { createTournament, getTournamentById, registerPlayerForTournament, unregisterPlayerFromTournament } from '@/lib/db';
 
-export async function handleTournamentCommand(interaction: APIInteraction) {
+export async function handleTournamentCommand(interaction: APIChatInputApplicationCommandInteraction) {
   if (interaction.type !== 2) return; // Not a command interaction
 
   const { data: command } = interaction;
@@ -24,7 +24,7 @@ export async function handleTournamentCommand(interaction: APIInteraction) {
           starting_chips: startingChips,
           blind_round_minutes: blindRoundMinutes,
           status: 'pending',
-          created_by: interaction.user.id
+          created_by: interaction.member?.user.id || interaction.user.id
         });
 
         const tournamentUrl = `${process.env.NEXT_PUBLIC_APP_URL}/tournament/${tournament.id}`;
