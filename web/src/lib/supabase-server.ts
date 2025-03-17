@@ -10,47 +10,18 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => Array.from(cookieStore.getAll()),
-        getCookie: (name: string) => cookieStore.get(name)?.value,
-        setCookie: (name: string, value: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
-          cookieStore.set(name, value, options);
-        },
-        removeCookie: (name: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
-          cookieStore.delete({ name, ...options });
-        },
+        getAll: () => Array.from(cookieStore.getAll()).map(cookie => ({
+          name: cookie.name,
+          value: cookie.value
+        })),
+        setAll: (cookies) => {
+          cookies.forEach(cookie => {
+            cookieStore.set(cookie.name, cookie.value, cookie.options);
+          });
+        }
       },
     }
   );
 }
 
-export async function createServerSupabaseClientOld() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        async get(name: string) {
-          const cookie = await cookieStore.get(name);
-          return cookie?.value;
-        },
-        async set(name: string, value: string, options: any) {
-          try {
-            await cookieStore.set({ name, value, ...options });
-          } catch (error) {
-            // Handle cookie setting error
-            console.error('Error setting cookie:', error);
-          }
-        },
-        async remove(name: string, options: any) {
-          try {
-            await cookieStore.delete({ name, ...options });
-          } catch (error) {
-            // Handle cookie removal error
-            console.error('Error removing cookie:', error);
-          }
-        },
-      },
-    }
-  );
-} 
+// Remove the old client since it's not being used 
