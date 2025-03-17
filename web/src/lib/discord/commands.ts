@@ -1,6 +1,10 @@
-import { APIChatInputApplicationCommandInteraction } from 'discord-api-types/v10';
+import { APIChatInputApplicationCommandInteraction, APIApplicationCommandInteractionDataOption } from 'discord-api-types/v10';
 import { InteractionResponseType } from 'discord-api-types/v10';
 import { createTournament, getTournamentById, registerPlayerForTournament, unregisterPlayerFromTournament } from '@/lib/db';
+
+function getOptionValue(options: APIApplicationCommandInteractionDataOption[] | undefined, name: string): any {
+  return options?.find(opt => opt.name === name)?.value;
+}
 
 export async function handleTournamentCommand(interaction: APIChatInputApplicationCommandInteraction) {
   if (interaction.type !== 2) return; // Not a command interaction
@@ -11,11 +15,11 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
   try {
     switch (command.name) {
       case 'create-tournament': {
-        const startTime = command.options?.find(opt => opt.name === 'start-time')?.value as string;
-        const maxPlayers = (command.options?.find(opt => opt.name === 'max-players')?.value as number) || 100;
-        const playersPerTable = (command.options?.find(opt => opt.name === 'players-per-table')?.value as number) || 6;
-        const startingChips = (command.options?.find(opt => opt.name === 'starting-chips')?.value as number) || 10000;
-        const blindRoundMinutes = (command.options?.find(opt => opt.name === 'blind-round-minutes')?.value as number) || 15;
+        const startTime = getOptionValue(command.options, 'start-time') as string;
+        const maxPlayers = (getOptionValue(command.options, 'max-players') as number) || 100;
+        const playersPerTable = (getOptionValue(command.options, 'players-per-table') as number) || 6;
+        const startingChips = (getOptionValue(command.options, 'starting-chips') as number) || 10000;
+        const blindRoundMinutes = (getOptionValue(command.options, 'blind-round-minutes') as number) || 15;
 
         const tournament = await createTournament({
           start_time: new Date(startTime),
@@ -39,7 +43,7 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
       }
 
       case 'register': {
-        const tournamentId = command.options?.find(opt => opt.name === 'tournament-id')?.value as string;
+        const tournamentId = getOptionValue(command.options, 'tournament-id') as string;
         const tournament = await getTournamentById(tournamentId);
 
         if (!tournament) {
@@ -79,7 +83,7 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
       }
 
       case 'unregister': {
-        const tournamentId = command.options?.find(opt => opt.name === 'tournament-id')?.value as string;
+        const tournamentId = getOptionValue(command.options, 'tournament-id') as string;
         const tournament = await getTournamentById(tournamentId);
 
         if (!tournament) {
