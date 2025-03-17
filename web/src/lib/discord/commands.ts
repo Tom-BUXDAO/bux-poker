@@ -27,11 +27,14 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
   if (!command) return;
 
   const userId = interaction.member?.user?.id || interaction.user?.id;
-  if (!userId) {
+  const username = interaction.member?.user?.username || interaction.user?.username;
+  const avatar = interaction.member?.user?.avatar || interaction.user?.avatar;
+
+  if (!userId || !username) {
     return new Response(JSON.stringify({
       type: InteractionResponseType.ChannelMessageWithSource,
       data: {
-        content: 'Could not determine user ID.',
+        content: 'Could not determine user information.',
         flags: 64
       }
     }), { headers: { 'Content-Type': 'application/json' } });
@@ -84,8 +87,8 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
         const registered = await registerPlayerForTournament(
           tournamentId,
           userId,
-          interaction.user.username,
-          interaction.user.avatar ? `https://cdn.discordapp.com/avatars/${userId}/${interaction.user.avatar}.png` : undefined
+          username,
+          avatar ? `https://cdn.discordapp.com/avatars/${userId}/${avatar}.png` : undefined
         );
 
         if (registered) {
