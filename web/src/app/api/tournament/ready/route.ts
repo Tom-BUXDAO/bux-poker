@@ -3,7 +3,6 @@ import { getServerSession } from 'next-auth';
 import { getPool } from '@/lib/db';
 
 export async function POST(request: Request) {
-  const pool = getPool();
   try {
     const session = await getServerSession();
     if (!session?.user?.id) {
@@ -16,6 +15,7 @@ export async function POST(request: Request) {
     }
 
     // Update the player's status to READY
+    const pool = await getPool();
     await pool.query(
       `UPDATE tournament_registrations 
        SET status = 'READY'

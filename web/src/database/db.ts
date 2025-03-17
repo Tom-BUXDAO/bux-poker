@@ -28,7 +28,7 @@ export function getPool() {
 }
 
 export async function getTournamentById(tournamentId: string) {
-  const pool = getPool();
+  const pool = await getPool();
   const query = `
     SELECT 
       t.*,
@@ -63,4 +63,10 @@ export async function getTournamentById(tournamentId: string) {
     console.error('Error fetching tournament:', error);
     throw error;
   }
-} 
+}
+
+// Create tables if they don't exist
+const pool = await getPool();
+await pool.query(`
+  // ... existing code ...
+`); 
