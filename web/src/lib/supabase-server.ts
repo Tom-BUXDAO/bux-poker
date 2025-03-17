@@ -11,11 +11,11 @@ export async function createClient() {
     {
       cookies: {
         getAll: () => Array.from(cookieStore.getAll()),
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
+        getCookie: (name: string) => cookieStore.get(name)?.value,
+        setCookie: (name: string, value: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
           cookieStore.set(name, value, options);
         },
-        remove: (name: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
+        removeCookie: (name: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
           cookieStore.delete({ name, ...options });
         },
       },
