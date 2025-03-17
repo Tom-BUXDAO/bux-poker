@@ -1,9 +1,32 @@
-/node_modules\n.env\n/dist\n/build\n*.log\nnpm-debug.log*\n.idea/\n.vscode/\n*.swp\n*.swo\n.DS_Store\n.DS_Store?\n._*\n.Spotlight-V100\n.Trashes\nehthumbs.db\nThumbs.db
+# dependencies
 node_modules
+.pnp
+.pnp.js
 
-# Environment Variables
-.env
-.env.*
-src/bot/.env
-web/web/.env
+# testing
+coverage
+
+# next.js
+.next/
+out/
+build
+dist
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
 .vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
