@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"cd web/web && npm run dev\" \"cd src/bot && ts-node discord.ts\"",
-    "build": "cd web/web && npm run build",
-    "start:web": "cd web/web && npm run start",
+    "dev": "concurrently \"cd web && npm run dev\" \"cd src/bot && ts-node discord.ts\"",
+    "build": "cd web && npm run build",
+    "start:web": "cd web && npm run start",
     "start:bot": "cd src && ts-node bot/discord.ts",
     "start": "ts-node src/bot/discord.ts"
   },
