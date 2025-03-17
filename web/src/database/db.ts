@@ -30,10 +30,4 @@ export async function getTournamentById(tournamentId: string) {
     console.error('Error fetching tournament:', error);
     throw error;
   }
-}
-
-// Create tables if they don't exist
-const supabase = await createClient();
-await supabase.query(`
-  // ... existing code ...
-`); 
+} 
