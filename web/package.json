@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "cd web && npm install && npm run build",
-    "dev": "cd web && npm run dev",
-    "start": "cd web && npm run start"
+    "build": "cd $(dirname $0)/web && npm install && npm run build",
+    "dev": "cd $(dirname $0)/web && npm run dev",
+    "start": "cd $(dirname $0)/web && npm run start"
   },
   "keywords": [],
   "author": "",
