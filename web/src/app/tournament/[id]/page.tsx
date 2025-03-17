@@ -4,6 +4,11 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabase-server';
 import RotatePrompt from '@/components/RotatePrompt';
 
+interface PageProps {
+  params: { id: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
+}
+
 interface Player {
   user_id: string | null;
   username: string;
@@ -75,15 +80,8 @@ async function getPageData(id: string) {
   return { tournament, user };
 }
 
-export default async function TournamentLobby({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }> | { id: string };
-  searchParams?: { [key: string]: string | string[] | undefined };
-}) {
-  const resolvedParams = await Promise.resolve(params);
-  const { tournament, user } = await getPageData(resolvedParams.id);
+export default async function TournamentPage({ params }: PageProps) {
+  const { tournament, user } = await getPageData(params.id);
 
   if (!tournament) {
     return (
@@ -103,7 +101,7 @@ export default async function TournamentLobby({
   }
 
   const startTime = new Date(tournament.start_time);
-  const players = tournament.players?.filter((p: Player) => p.user_id !== null) || [];
+  const players = (tournament.players as Player[] || []).filter(p => p.user_id !== null);
   const status = tournament.status?.toLowerCase() || 'pending';
   const maxPlayers = tournament.max_players || 100;
 
