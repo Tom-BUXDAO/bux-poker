@@ -1,5 +1,30 @@
 import { createClient } from './supabase-server';
 
+interface User {
+  username: string;
+  discord_id: string;
+  discord_avatar_url: string | null;
+}
+
+interface TournamentRegistration {
+  user_id: string;
+  users?: User;
+  registration_time: string;
+  chip_count: number | null;
+  final_position: number | null;
+}
+
+interface Tournament {
+  id: string;
+  start_time: string;
+  max_players: number;
+  players_per_table: number;
+  starting_chips: number;
+  blind_round_minutes: number;
+  status: string;
+  tournament_registrations?: TournamentRegistration[];
+}
+
 export async function getTournamentById(id: string) {
   const supabase = await createClient();
   const { data: tournament, error: tournamentError } = await supabase
@@ -18,7 +43,7 @@ export async function getTournamentById(id: string) {
   // Transform the data to match the expected format
   return {
     ...tournament,
-    players: tournament.tournament_registrations?.map(reg => ({
+    players: (tournament as Tournament).tournament_registrations?.map((reg: TournamentRegistration) => ({
       user_id: reg.user_id,
       username: reg.users?.username,
       discord_id: reg.users?.discord_id,
