@@ -25,7 +25,7 @@ const handler = NextAuth({
     async signIn({ user, account, profile }) {
       if (account?.provider === 'discord' && profile) {
         const discordProfile = profile as DiscordProfile;
-        const pool = getPool();
+        const pool = await getPool();
         const avatarUrl = `https://cdn.discordapp.com/avatars/${discordProfile.id}/${discordProfile.avatar}.png`;
         
         // Update or create user with Discord avatar URL
