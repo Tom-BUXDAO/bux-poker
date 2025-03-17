@@ -2,6 +2,12 @@ import NextAuth from 'next-auth';
 import DiscordProvider from 'next-auth/providers/discord';
 import { getPool } from '@/lib/db';
 
+interface DiscordProfile {
+  id: string;
+  username: string;
+  avatar: string;
+}
+
 const handler = NextAuth({
   providers: [
     DiscordProvider({
@@ -18,8 +24,9 @@ const handler = NextAuth({
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'discord' && profile) {
+        const discordProfile = profile as DiscordProfile;
         const pool = getPool();
-        const avatarUrl = `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`;
+        const avatarUrl = `https://cdn.discordapp.com/avatars/${discordProfile.id}/${discordProfile.avatar}.png`;
         
         // Update or create user with Discord avatar URL
         await pool.query(`
@@ -29,13 +36,13 @@ const handler = NextAuth({
           DO UPDATE SET 
             username = EXCLUDED.username,
             discord_avatar_url = EXCLUDED.discord_avatar_url
-        `, [crypto.randomUUID(), profile.username, profile.id, avatarUrl]);
+        `, [crypto.randomUUID(), discordProfile.username, discordProfile.id, avatarUrl]);
       }
       return true;
     },
     async jwt({ token, profile }) {
       if (profile) {
-        token.id = profile.id;
+        token.id = (profile as DiscordProfile).id;
       }
       return token;
     },
