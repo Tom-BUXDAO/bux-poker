@@ -4,11 +4,37 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "cd $(dirname $0)/web && npm install && npm run build",
-    "dev": "cd $(dirname $0)/web && npm run dev",
-    "start": "cd $(dirname $0)/web && npm run start"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "discord-api-types": "^0.37.119",
+    "discord-interactions": "^4.1.1",
+    "dotenv": "^16.4.7",
+    "lucide-react": "^0.482.0",
+    "next": "^15.2.2",
+    "next-auth": "^4.24.11",
+    "pg": "^8.14.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.16",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.0"
+  }
 }
