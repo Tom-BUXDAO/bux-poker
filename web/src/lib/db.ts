@@ -1,7 +1,7 @@
-import { createServerSupabaseClient } from './supabase-server';
+import { createClient } from './supabase-server';
 
 export async function getTournamentById(id: string) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createClient();
   const { data: tournament, error: tournamentError } = await supabase
     .from('tournaments')
     .select('*, tournament_registrations(*, users(*))')
@@ -31,7 +31,7 @@ export async function getTournamentById(id: string) {
 }
 
 export async function getTournaments() {
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createClient();
   const { data: tournaments, error } = await supabase
     .from('tournaments')
     .select('*, tournament_registrations(*)');
@@ -56,7 +56,7 @@ export async function createTournament(data: {
   status: string;
   created_by: string;
 }) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createClient();
   const { data: tournament, error } = await supabase
     .from('tournaments')
     .insert([data])
@@ -77,7 +77,7 @@ export async function registerPlayerForTournament(
   username: string,
   avatarUrl?: string
 ) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createClient();
 
   // First, ensure the user exists in the users table
   const { error: userError } = await supabase
@@ -114,7 +114,7 @@ export async function unregisterPlayerFromTournament(
   tournamentId: string,
   userId: string
 ) {
-  const supabase = await createServerSupabaseClient();
+  const supabase = await createClient();
   
   const { error } = await supabase
     .from('tournament_registrations')

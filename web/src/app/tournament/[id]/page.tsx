@@ -1,7 +1,7 @@
 import { getTournamentById } from '@/lib/db';
 import { CalendarDays, Users, Coins, Timer, ChevronRight, LayoutGrid } from 'lucide-react';
 import Image from 'next/image';
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
 import RotatePrompt from '@/components/RotatePrompt';
 
 function getTimeUntilStart(startTime: Date) {
@@ -46,9 +46,10 @@ const BLIND_STRUCTURE = [
 ];
 
 async function getPageData(id: string) {
+  const supabase = await createClient();
   const [tournament, { data: { user } }] = await Promise.all([
     getTournamentById(id),
-    createServerSupabaseClient().then(supabase => supabase.auth.getUser())
+    supabase.auth.getUser()
   ]);
   return { tournament, user };
 }
