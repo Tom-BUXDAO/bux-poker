@@ -1,9 +1,23 @@
-import { APIChatInputApplicationCommandInteraction, APIApplicationCommandInteractionDataOption } from 'discord-api-types/v10';
+import { APIChatInputApplicationCommandInteraction, APIApplicationCommandInteractionDataOption, ApplicationCommandOptionType, APIApplicationCommandInteractionDataStringOption, APIApplicationCommandInteractionDataIntegerOption, APIApplicationCommandInteractionDataNumberOption, APIApplicationCommandInteractionDataBooleanOption } from 'discord-api-types/v10';
 import { InteractionResponseType } from 'discord-api-types/v10';
 import { createTournament, getTournamentById, registerPlayerForTournament, unregisterPlayerFromTournament } from '@/lib/db';
 
 function getOptionValue(options: APIApplicationCommandInteractionDataOption[] | undefined, name: string): any {
-  return options?.find(opt => opt.name === name)?.value;
+  const option = options?.find(opt => opt.name === name);
+  if (!option) return undefined;
+  
+  switch (option.type) {
+    case ApplicationCommandOptionType.String:
+      return (option as APIApplicationCommandInteractionDataStringOption).value;
+    case ApplicationCommandOptionType.Integer:
+      return (option as APIApplicationCommandInteractionDataIntegerOption).value;
+    case ApplicationCommandOptionType.Number:
+      return (option as APIApplicationCommandInteractionDataNumberOption).value;
+    case ApplicationCommandOptionType.Boolean:
+      return (option as APIApplicationCommandInteractionDataBooleanOption).value;
+    default:
+      return undefined;
+  }
 }
 
 export async function handleTournamentCommand(interaction: APIChatInputApplicationCommandInteraction) {
