@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 export async function createClient() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,18 +14,10 @@ export async function createClient() {
           return cookie?.value;
         },
         async set(name: string, value: string, options: any) {
-          try {
-            await cookieStore.set(name, value, options);
-          } catch (error) {
-            console.error('Error setting cookie:', error);
-          }
+          await cookieStore.set(name, value, options);
         },
         async remove(name: string, options: any) {
-          try {
-            await cookieStore.delete(name, options);
-          } catch (error) {
-            console.error('Error removing cookie:', error);
-          }
+          await cookieStore.delete(name, options);
         },
       },
     }
