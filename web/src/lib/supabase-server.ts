@@ -10,13 +10,8 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => {
-          return Array.from(cookieStore.getAll());
-        },
-        get: (name: string) => {
-          const cookie = cookieStore.get(name);
-          return cookie?.value;
-        },
+        getAll: () => Array.from(cookieStore.getAll()),
+        get: (name: string) => cookieStore.get(name)?.value,
         set: (name: string, value: string, options: Omit<ResponseCookie, 'value' | 'expires'>) => {
           cookieStore.set(name, value, options);
         },
