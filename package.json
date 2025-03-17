@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"cd web/web && npm run dev\" \"cd src/bot && ts-node discord.ts\"",
-    "start": "concurrently \"cd web/web && npm run start\" \"cd src/bot && ts-node discord.ts\""
+    "build": "cd web/web && npm run build",
+    "start:web": "cd web/web && npm run start",
+    "start:bot": "cd src && ts-node bot/discord.ts",
+    "start": "ts-node src/bot/discord.ts"
   },
   "keywords": [
     "poker",

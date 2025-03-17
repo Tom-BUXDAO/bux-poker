@@ -47,6 +47,89 @@ export async function getTournaments() {
   }));
 }
 
+export async function createTournament(data: {
+  start_time: Date;
+  max_players: number;
+  players_per_table: number;
+  starting_chips: number;
+  blind_round_minutes: number;
+  status: string;
+  created_by: string;
+}) {
+  const supabase = await createServerSupabaseClient();
+  const { data: tournament, error } = await supabase
+    .from('tournaments')
+    .insert([data])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating tournament:', error);
+    return null;
+  }
+
+  return tournament;
+}
+
+export async function registerPlayerForTournament(
+  tournamentId: string,
+  userId: string,
+  username: string,
+  avatarUrl?: string
+) {
+  const supabase = await createServerSupabaseClient();
+
+  // First, ensure the user exists in the users table
+  const { error: userError } = await supabase
+    .from('users')
+    .upsert({
+      discord_id: userId,
+      username,
+      discord_avatar_url: avatarUrl
+    });
+
+  if (userError) {
+    console.error('Error upserting user:', userError);
+    return false;
+  }
+
+  // Then register them for the tournament
+  const { error: registrationError } = await supabase
+    .from('tournament_registrations')
+    .insert([{
+      tournament_id: tournamentId,
+      user_id: userId,
+      registration_time: new Date().toISOString()
+    }]);
+
+  if (registrationError) {
+    console.error('Error registering player:', registrationError);
+    return false;
+  }
+
+  return true;
+}
+
+export async function unregisterPlayerFromTournament(
+  tournamentId: string,
+  userId: string
+) {
+  const supabase = await createServerSupabaseClient();
+  
+  const { error } = await supabase
+    .from('tournament_registrations')
+    .delete()
+    .eq('tournament_id', tournamentId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('Error unregistering player:', error);
+    return false;
+  }
+
+  return true;
+}
+
 export async function getPool() {
   // This is just a compatibility function for any code still using the old pg Pool
   // It will be removed once all code is migrated to use Supabase directly

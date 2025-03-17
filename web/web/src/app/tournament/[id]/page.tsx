@@ -44,18 +44,23 @@ const BLIND_STRUCTURE = [
   { small: 5000, big: 10000 },
 ];
 
+async function getPageData(id: string) {
+  const [tournament, { data: { user } }] = await Promise.all([
+    getTournamentById(id),
+    createServerSupabaseClient().then(supabase => supabase.auth.getUser())
+  ]);
+  return { tournament, user };
+}
+
 export default async function TournamentLobby({
   params,
   searchParams,
 }: {
-  params: { id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
+  params: Promise<{ id: string }> | { id: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
 }) {
-  const id = (await Promise.resolve(params)).id;
-  const tournament = await getTournamentById(id);
-  
-  const supabase = await createServerSupabaseClient();
-  const { data: { session } } = await supabase.auth.getSession();
+  const resolvedParams = await Promise.resolve(params);
+  const { tournament, user } = await getPageData(resolvedParams.id);
 
   if (!tournament) {
     return (
@@ -76,7 +81,6 @@ export default async function TournamentLobby({
 
   const startTime = new Date(tournament.start_time);
   const players = tournament.players?.filter(p => p.user_id !== null) || [];
-  console.log('Players:', JSON.stringify(players, null, 2)); // Debug log
   const status = tournament.status?.toLowerCase() || 'pending';
   const maxPlayers = tournament.max_players || 100;
 
@@ -268,13 +272,16 @@ export default async function TournamentLobby({
                     <div className="flex items-center gap-4">
                       <div className="relative w-10 h-10">
                         {player.discord_avatar_url ? (
-                          <Image
-                            src={player.discord_avatar_url}
-                            alt={player.username}
-                            fill
-                            className="rounded-full"
-                            unoptimized
-                          />
+                          <div style={{ position: 'relative', width: '40px', height: '40px', overflow: 'hidden' }} className="rounded-full">
+                            <Image
+                              src={player.discord_avatar_url}
+                              alt={player.username}
+                              fill
+                              sizes="40px"
+                              style={{ objectFit: 'cover' }}
+                              priority={index === 0}
+                            />
+                          </div>
                         ) : (
                           <div className="flex items-center justify-center w-10 h-10 rounded-full
                             bg-[#5865F2] text-white font-medium text-lg">
@@ -297,7 +304,7 @@ export default async function TournamentLobby({
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {session?.user?.id === player.discord_id && status === 'pending' && (
+                      {user?.id === player.discord_id && status === 'pending' && (
                         <span className="px-3 py-1 rounded-full text-xs font-medium capitalize
                           bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-lg">
                           registered
