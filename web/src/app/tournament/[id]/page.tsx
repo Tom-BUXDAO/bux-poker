@@ -4,6 +4,27 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabase-server';
 import RotatePrompt from '@/components/RotatePrompt';
 
+interface Player {
+  user_id: string | null;
+  username: string;
+  discord_id: string;
+  discord_avatar_url: string | null;
+  registration_time: string;
+  chip_count: number | null;
+  final_position: number | null;
+}
+
+interface Tournament {
+  id: string;
+  start_time: string;
+  max_players: number;
+  players_per_table: number;
+  starting_chips: number;
+  blind_round_minutes: number;
+  status: string;
+  players?: Player[];
+}
+
 function getTimeUntilStart(startTime: Date) {
   const now = new Date();
   const diff = startTime.getTime() - now.getTime();
@@ -82,7 +103,7 @@ export default async function TournamentLobby({
   }
 
   const startTime = new Date(tournament.start_time);
-  const players = tournament.players?.filter(p => p.user_id !== null) || [];
+  const players = tournament.players?.filter((p: Player) => p.user_id !== null) || [];
   const status = tournament.status?.toLowerCase() || 'pending';
   const maxPlayers = tournament.max_players || 100;
 
