@@ -26,6 +26,17 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
   const { data: command } = interaction;
   if (!command) return;
 
+  const userId = interaction.member?.user?.id || interaction.user?.id;
+  if (!userId) {
+    return new Response(JSON.stringify({
+      type: InteractionResponseType.ChannelMessageWithSource,
+      data: {
+        content: 'Could not determine user ID.',
+        flags: 64
+      }
+    }), { headers: { 'Content-Type': 'application/json' } });
+  }
+
   try {
     switch (command.name) {
       case 'create-tournament': {
@@ -42,7 +53,7 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
           starting_chips: startingChips,
           blind_round_minutes: blindRoundMinutes,
           status: 'pending',
-          created_by: interaction.member?.user.id || interaction.user.id
+          created_by: userId
         });
 
         const tournamentUrl = `${process.env.NEXT_PUBLIC_APP_URL}/tournament/${tournament.id}`;
@@ -72,9 +83,9 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
 
         const registered = await registerPlayerForTournament(
           tournamentId,
-          interaction.user.id,
+          userId,
           interaction.user.username,
-          interaction.user.avatar ? `https://cdn.discordapp.com/avatars/${interaction.user.id}/${interaction.user.avatar}.png` : undefined
+          interaction.user.avatar ? `https://cdn.discordapp.com/avatars/${userId}/${interaction.user.avatar}.png` : undefined
         );
 
         if (registered) {
@@ -110,7 +121,7 @@ export async function handleTournamentCommand(interaction: APIChatInputApplicati
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
-        const unregistered = await unregisterPlayerFromTournament(tournamentId, interaction.user.id);
+        const unregistered = await unregisterPlayerFromTournament(tournamentId, userId);
 
         if (unregistered) {
           return new Response(JSON.stringify({
