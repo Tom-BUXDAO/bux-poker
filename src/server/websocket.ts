@@ -9,6 +9,8 @@ interface Player {
   isActive: boolean;
   isCurrent: boolean;
   disconnectedAt?: number;
+  cards?: { rank: string; suit: string }[];
+  isDealer?: boolean;
 }
 
 interface GameState {
@@ -17,6 +19,11 @@ interface GameState {
   pot: number;
   currentBet: number;
   currentPosition: number;
+  dealerPosition?: number;
+  smallBlind: number;
+  bigBlind: number;
+  status: 'waiting' | 'playing' | 'finished';
+  deck?: string[];
 }
 
 interface ChatMessage {
@@ -78,6 +85,122 @@ function findNextPosition(players: Player[]): number | null {
   return null;
 }
 
+// Initialize a new deck of cards
+function createDeck(): string[] {
+  const suits = ['H', 'D', 'C', 'S'];
+  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  const deck = [];
+  
+  for (const suit of suits) {
+    for (const rank of ranks) {
+      deck.push(`${rank}${suit}`);
+    }
+  }
+  
+  return shuffleDeck(deck);
+}
+
+// Fisher-Yates shuffle algorithm
+function shuffleDeck(deck: string[]): string[] {
+  const shuffled = [...deck];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Deal cards to players
+function dealCards(gameState: GameState) {
+  if (!gameState.deck) return;
+  
+  const activePlayers = gameState.players.filter(p => p.isActive);
+  
+  // Deal 2 cards to each player
+  for (let i = 0; i < 2; i++) {
+    for (const player of activePlayers) {
+      if (!player.cards) player.cards = [];
+      const card = gameState.deck.pop();
+      if (card) {
+        const [rank, suit] = [card.slice(0, -1), card.slice(-1)];
+        player.cards.push({ rank, suit });
+      }
+    }
+  }
+}
+
+function handleGameStart(tableId: string) {
+  const gameState = gameStates.get(tableId);
+  if (!gameState) return;
+
+  const activePlayers = gameState.players.filter(p => p.isActive);
+  if (activePlayers.length < 2) return;
+
+  // Initialize game state
+  gameState.status = 'playing';
+  gameState.pot = 0;
+  gameState.currentBet = 0;
+  gameState.smallBlind = 10;
+  gameState.bigBlind = 20;
+  gameState.communityCards = [];
+  gameState.deck = createDeck();
+
+  // Randomly select dealer
+  const dealerIndex = Math.floor(Math.random() * activePlayers.length);
+  const dealerPosition = activePlayers[dealerIndex].position;
+  gameState.dealerPosition = dealerPosition;
+
+  // Reset player states and deal cards
+  for (const player of gameState.players) {
+    player.cards = [];
+    player.isDealer = player.position === gameState.dealerPosition;
+    player.isCurrent = false;
+  }
+
+  // Deal cards
+  dealCards(gameState);
+
+  // Get players in clockwise order (they're already ordered by position)
+  const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
+  const dealerIdx = orderedPlayers.findIndex(p => p.position === dealerPosition);
+  
+  // Small blind is next player after dealer
+  const sbIdx = (dealerIdx + 1) % orderedPlayers.length;
+  const sbPlayer = orderedPlayers[sbIdx];
+  sbPlayer.chips -= gameState.smallBlind;
+  gameState.pot += gameState.smallBlind;
+
+  // Big blind is next player after small blind
+  const bbIdx = (sbIdx + 1) % orderedPlayers.length;
+  const bbPlayer = orderedPlayers[bbIdx];
+  bbPlayer.chips -= gameState.bigBlind;
+  gameState.pot += gameState.bigBlind;
+  gameState.currentBet = gameState.bigBlind;
+
+  // First to act is next player after big blind
+  const firstToActIdx = (bbIdx + 1) % orderedPlayers.length;
+  const firstToActPlayer = orderedPlayers[firstToActIdx];
+  gameState.currentPosition = firstToActPlayer.position;
+  firstToActPlayer.isCurrent = true;
+
+  // Broadcast updated game state
+  broadcastToTable(tableId, {
+    type: 'gameState',
+    payload: gameState,
+  });
+
+  // Broadcast game started event
+  broadcastToTable(tableId, {
+    type: 'gameStarted',
+    payload: {
+      dealerPosition: gameState.dealerPosition,
+      smallBlind: gameState.smallBlind,
+      bigBlind: gameState.bigBlind,
+      currentPosition: gameState.currentPosition
+    },
+  });
+}
+
 wss.on('connection', (ws, req) => {
   const { query } = parse(req.url || '', true);
   const tableId = Array.isArray(query.tableId) ? query.tableId[0] : query.tableId;
@@ -132,6 +255,9 @@ wss.on('connection', (ws, req) => {
       pot: 0,
       currentBet: 0,
       currentPosition: 0,
+      smallBlind: 10,
+      bigBlind: 20,
+      status: 'waiting',
     });
   }
 
@@ -194,6 +320,11 @@ wss.on('connection', (ws, req) => {
       
       if (message.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
+      
+      if (message.type === 'startGame') {
+        handleGameStart(tableId);
         return;
       }
       

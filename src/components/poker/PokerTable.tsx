@@ -24,6 +24,7 @@ interface Player {
   isActive: boolean;
   isCurrent: boolean;
   avatarUrl?: string;
+  isDealer: boolean;
 }
 
 interface ChatMessage {
@@ -49,6 +50,7 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const announcedPlayers = useRef<Set<string>>(new Set());
+  const [gameStatus, setGameStatus] = useState('waiting');
 
   // Auto scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -103,6 +105,7 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
         setCommunityCards(state.communityCards || []);
         setPot(state.pot || 0);
         setCurrentBet(state.currentBet || 0);
+        setGameStatus(state.status || 'waiting');
       });
 
       pokerWebSocket.on('playerJoined', (data: any) => {
@@ -166,23 +169,77 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
     });
   };
 
+  // Add handler for starting the game
+  const handleStartGame = () => {
+    pokerWebSocket.sendMessage({
+      type: 'startGame'
+    });
+  };
+
+  // Get active players count
+  const activePlayersCount = players.filter(p => p.isActive).length;
+
   // Render a single seat
   const SeatComponent = ({ position }: { position: number }) => {
     const player = players.find(p => p.position === position);
+    const isBottomHalf = [4, 5, 6, 7].includes(position);
     
     return (
       <div className="relative">
         {/* Player info container - only shown when seat is occupied */}
         {player && (
-          <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-gray-900/90 px-4 py-2 whitespace-nowrap z-10 flex items-center border-2 border-gray-600 rounded">
-            <span className="text-white text-xs font-bold">{player.name}</span>
-            <span className="text-gray-400 text-xs mx-1">|</span>
-            <span className="text-yellow-400 text-xs font-bold">{player.chips}</span>
-          </div>
+          <>
+            {/* Player Cards - For bottom half seats, show above avatar */}
+            {player.cards && isBottomHalf && (
+              <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 flex gap-1">
+                {player.cards.map((card, i) => (
+                  <div key={i} className="w-12 h-18 relative">
+                    <img
+                      src={player.id === currentPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
+                      alt={player.id === currentPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
+                      className="w-full h-full object-contain rounded-sm shadow-md"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Player info - For bottom half seats, show below avatar */}
+            <div className={`absolute ${isBottomHalf ? '-bottom-6' : '-top-6'} left-1/2 transform -translate-x-1/2 bg-gray-900/90 px-4 py-2 whitespace-nowrap z-10 flex items-center gap-2 border-2 border-gray-600 rounded`}>
+              {/* Dealer Button */}
+              {player.isDealer && (
+                <div className="w-4 h-4 bg-white rounded-full text-black text-[10px] flex items-center justify-center font-bold">
+                  D
+                </div>
+              )}
+              <span className="text-white text-xs font-bold">{player.name}</span>
+              <span className="text-gray-400 text-xs">|</span>
+              <span className="text-yellow-400 text-xs font-bold">{player.chips}</span>
+            </div>
+
+            {/* Player Cards - For top half seats, show below avatar */}
+            {player.cards && !isBottomHalf && (
+              <div className="absolute -bottom-14 left-1/2 transform -translate-x-1/2 flex gap-1">
+                {player.cards.map((card, i) => (
+                  <div key={i} className="w-12 h-18 relative">
+                    <img
+                      src={player.id === currentPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
+                      alt={player.id === currentPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
+                      className="w-full h-full object-contain rounded-sm shadow-md"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
         
-        {/* Seat circle */}
-        <div className={`w-20 h-20 rounded-full flex flex-col items-center justify-center overflow-hidden border-2 border-gray-600 ${
+        {/* Seat circle - highlight if it's player's turn */}
+        <div className={`w-20 h-20 rounded-full flex flex-col items-center justify-center overflow-hidden border-2 ${
+          player?.isCurrent 
+            ? 'border-yellow-400 shadow-lg shadow-yellow-400/50' 
+            : 'border-gray-600'
+        } ${
           !player ? 'bg-gray-800 opacity-60 font-bold' : 'bg-gray-800'
         }`}>
           {player ? (
@@ -208,12 +265,22 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
           {/* Poker Table - 70% height */}
           <div className="h-[70%] relative">
             {/* The actual table surface - smaller with padding for seats */}
-            <div className="absolute inset-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
+            <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
               {/* Table content (pot, etc) */}
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
                 <div className="bg-black/50 text-white px-3 py-1 rounded-full text-sm">
                   Pot: ${pot}
                 </div>
+
+                {/* Start Game Button */}
+                {gameStatus === 'waiting' && activePlayersCount >= 2 && (
+                  <button
+                    onClick={handleStartGame}
+                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full text-sm font-bold transition-colors shadow-lg"
+                  >
+                    Start Game
+                  </button>
+                )}
               </div>
 
               {/* Connection Status */}
@@ -226,34 +293,34 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
 
             {/* Fixed seat positions - now using SeatComponent */}
             {/* Top seats */}
-            <div className="absolute top-0 left-1/4 transform -translate-x-1/2">
+            <div className="absolute top-0 left-1/3 transform -translate-x-1/2">
               <SeatComponent position={1} />
             </div>
-            <div className="absolute top-0 right-1/4 transform translate-x-1/2">
+            <div className="absolute top-0 right-1/3 transform translate-x-1/2">
               <SeatComponent position={2} />
             </div>
 
             {/* Right seats */}
-            <div className="absolute top-1/4 right-0 transform -translate-y-1/2">
+            <div className="absolute top-1/4 right-16 transform -translate-y-1/2">
               <SeatComponent position={3} />
             </div>
-            <div className="absolute bottom-1/4 right-0 transform translate-y-1/2">
+            <div className="absolute bottom-1/4 right-16 transform translate-y-1/2">
               <SeatComponent position={4} />
             </div>
 
             {/* Bottom seats */}
-            <div className="absolute bottom-0 right-1/4 transform translate-x-1/2">
+            <div className="absolute bottom-0 right-1/3 transform translate-x-1/2">
               <SeatComponent position={5} />
             </div>
-            <div className="absolute bottom-0 left-1/4 transform -translate-x-1/2">
+            <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2">
               <SeatComponent position={6} />
             </div>
 
             {/* Left seats */}
-            <div className="absolute bottom-1/4 left-0 transform translate-y-1/2">
+            <div className="absolute bottom-1/4 left-16 transform translate-y-1/2">
               <SeatComponent position={7} />
             </div>
-            <div className="absolute top-1/4 left-0 transform -translate-y-1/2">
+            <div className="absolute top-1/4 left-16 transform -translate-y-1/2">
               <SeatComponent position={8} />
             </div>
           </div>
