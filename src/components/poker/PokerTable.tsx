@@ -326,9 +326,28 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
           </div>
 
           {/* Controls Container - remaining height */}
-          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center justify-center">
+          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center">
+            {/* Large Card Display */}
+            <div className="flex-none mr-8 bg-black/30 p-4 rounded-lg">
+              {players.find(p => p.id === currentPlayer?.id)?.cards ? (
+                <div className="flex gap-2">
+                  {players.find(p => p.id === currentPlayer?.id)?.cards?.map((card, i) => (
+                    <div key={i} className="w-24 h-36 relative">
+                      <img
+                        src={`/cards/${card.rank}${card.suit}.png`}
+                        alt={`${card.rank}${card.suit}`}
+                        className="w-full h-full object-contain rounded-md shadow-lg"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-gray-400 text-sm">Your cards will appear here</div>
+              )}
+            </div>
+
             {/* Action Panel */}
-            <div className="flex items-center justify-center gap-3">
+            <div className="flex-1 flex items-center justify-center gap-3">
               <button
                 onClick={() => handleAction('fold')}
                 className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition-colors"
