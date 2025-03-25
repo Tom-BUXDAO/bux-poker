@@ -19,30 +19,33 @@ export default function DevTablePage() {
 
   useEffect(() => {
     // Check for player info in localStorage
-    const storedPlayer = localStorage.getItem('devPlayer');
+    const storedPlayer = localStorage.getItem('pokerPlayer');
+    console.log('Stored player data:', storedPlayer);
+    
     if (!storedPlayer) {
-      router.push('/dev');
+      console.log('No player data found, redirecting to /dev');
+      router.replace('/dev');
       return;
     }
 
     try {
       const playerData = JSON.parse(storedPlayer);
+      console.log('Parsed player data:', playerData);
       // Add required properties for the poker table
       setPlayer({
         ...playerData,
-        position: 1, // Default position
         isActive: true,
         isCurrent: true,
       });
     } catch (error) {
       console.error('Failed to parse player data:', error);
-      router.push('/dev');
+      router.replace('/dev');
     }
   }, [router]);
 
   const handleLeaveTable = () => {
-    localStorage.removeItem('devPlayer');
-    router.push('/dev');
+    localStorage.removeItem('pokerPlayer');
+    router.replace('/dev');
   };
 
   if (!player) {

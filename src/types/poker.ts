@@ -1,14 +1,16 @@
-export type Card = {
-  suit: 'hearts' | 'diamonds' | 'clubs' | 'spades';
-  rank: '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A';
-};
+export interface Card {
+  rank: string;
+  suit: string;
+}
 
-export type PlayerAction = {
+export interface PlayerAction {
   type: 'fold' | 'check' | 'call' | 'raise';
   amount?: number;
   playerId: string;
   timestamp: Date;
-};
+}
+
+export type TablePosition = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 export type HandRank =
   | 'high-card'
@@ -34,6 +36,4 @@ export type PlayerHand = {
   playerId: string;
   cards: Card[];
   evaluation?: HandEvaluation;
-};
-
-export type TablePosition = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9; 
+}; 
