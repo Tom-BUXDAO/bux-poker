@@ -285,9 +285,8 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
   };
 
   return (
-    <div className="h-full flex">
-      {/* Main content + Chat */}
-      <div className="flex-1 flex gap-4 p-4">
+    <div className="h-full flex flex-col">
+      <div className="flex gap-4 p-4 flex-1 overflow-hidden">
         {/* Main content (table + actions) */}
         <div className="flex-1 flex flex-col gap-4">
           {/* Poker Table - 70% height */}
@@ -463,7 +462,7 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
         </div>
 
         {/* Chat Window */}
-        <div className="w-80 bg-gray-800 flex flex-col rounded-lg h-[calc(100vh-2rem)]">
+        <div className="w-80 bg-gray-800 flex flex-col rounded-lg">
           <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
