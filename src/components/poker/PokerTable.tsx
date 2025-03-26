@@ -286,11 +286,11 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex gap-4 p-4 flex-1 overflow-hidden">
+      <div className="flex gap-4 p-4 flex-1">
         {/* Main content (table + actions) */}
-        <div className="flex-1 flex flex-col gap-4">
+        <div className="flex-1 flex flex-col gap-4 overflow-visible">
           {/* Poker Table - 70% height */}
-          <div className="h-[70%] relative">
+          <div className="h-[70%] relative overflow-visible">
             {/* The actual table surface - smaller with padding for seats */}
             <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
               {/* Table content */}
