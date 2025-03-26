@@ -3,6 +3,20 @@ export interface Card {
   suit: string;
 }
 
+export interface Player {
+  id: string;
+  position: TablePosition;
+  chips: number;
+  isActive: boolean;
+  isCurrent: boolean;
+  name: string;
+  cards?: Card[];
+  isDealer?: boolean;
+  currentBet: number;
+  disconnectedAt?: number;
+  avatarUrl?: string;
+}
+
 export interface PlayerAction {
   type: 'fold' | 'check' | 'call' | 'raise';
   amount?: number;

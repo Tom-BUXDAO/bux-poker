@@ -2,6 +2,11 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
 
+// Extend WebSocket type to include isAlive
+interface ExtendedWebSocket extends WebSocket {
+  isAlive: boolean;
+}
+
 interface Player {
   id: string;
   position: number;
@@ -11,6 +16,7 @@ interface Player {
   disconnectedAt?: number;
   cards?: { rank: string; suit: string }[];
   isDealer?: boolean;
+  currentBet: number;
 }
 
 interface GameState {
@@ -46,6 +52,9 @@ const wss = new WebSocketServer({ server: httpServer });
 // Cleanup disconnected players after grace period
 const DISCONNECTION_GRACE_PERIOD = 30000; // 30 seconds
 const MAX_PLAYERS_PER_TABLE = 8;
+
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const HEARTBEAT_TIMEOUT = 35000;  // 35 seconds
 
 function cleanupDisconnectedPlayer(tableId: string, playerId: string) {
   const gameState = gameStates.get(tableId);
@@ -151,57 +160,78 @@ function handleGameStart(tableId: string) {
   gameState.dealerPosition = dealerPosition;
 
   // Reset player states and deal cards
-  for (const player of gameState.players) {
-    player.cards = [];
-    player.isDealer = player.position === gameState.dealerPosition;
-    player.isCurrent = false;
+  const resetAndDealCards = () => {
+    // Reset all player states
+    gameState.players.forEach(player => {
+      player.currentBet = 0;
+      player.cards = [];
+    });
+
+    // Set blinds
+    const smallBlindPosition = 2; // Seat 2
+    const bigBlindPosition = 3;   // Seat 3
+
+    // Find players in blind positions and set their bets
+    const smallBlindPlayer = gameState.players.find(p => p.position === smallBlindPosition);
+    const bigBlindPlayer = gameState.players.find(p => p.position === bigBlindPosition);
+
+    if (smallBlindPlayer) {
+      smallBlindPlayer.currentBet = 20;
+    }
+    if (bigBlindPlayer) {
+      bigBlindPlayer.currentBet = 40;
+    }
+
+    // Deal cards to all players
+    dealCards(gameState);
+
+    // Get players in clockwise order (they're already ordered by position)
+    const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
+    const dealerIdx = orderedPlayers.findIndex(p => p.position === dealerPosition);
+    
+    // Small blind is next player after dealer
+    const sbIdx = (dealerIdx + 1) % orderedPlayers.length;
+    const sbPlayer = orderedPlayers[sbIdx];
+    sbPlayer.chips -= gameState.smallBlind;
+    sbPlayer.currentBet = gameState.smallBlind;
+    gameState.pot += gameState.smallBlind;
+
+    // Big blind is next player after small blind
+    const bbIdx = (sbIdx + 1) % orderedPlayers.length;
+    const bbPlayer = orderedPlayers[bbIdx];
+    bbPlayer.chips -= gameState.bigBlind;
+    bbPlayer.currentBet = gameState.bigBlind;
+    gameState.pot += gameState.bigBlind;
+    gameState.currentBet = gameState.bigBlind;
+
+    // First to act is next player after big blind
+    const firstToActIdx = (bbIdx + 1) % orderedPlayers.length;
+    const firstToActPlayer = orderedPlayers[firstToActIdx];
+    gameState.currentPosition = firstToActPlayer.position;
+    firstToActPlayer.isCurrent = true;
+
+    // Broadcast updated game state
+    broadcastToTable(tableId, {
+      type: 'gameState',
+      payload: gameState,
+    });
+
+    // Broadcast game started event
+    broadcastToTable(tableId, {
+      type: 'gameStarted',
+      payload: {
+        dealerPosition: gameState.dealerPosition,
+        smallBlind: gameState.smallBlind,
+        bigBlind: gameState.bigBlind,
+        currentPosition: gameState.currentPosition
+      },
+    });
   }
 
-  // Deal cards
-  dealCards(gameState);
-
-  // Get players in clockwise order (they're already ordered by position)
-  const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
-  const dealerIdx = orderedPlayers.findIndex(p => p.position === dealerPosition);
-  
-  // Small blind is next player after dealer
-  const sbIdx = (dealerIdx + 1) % orderedPlayers.length;
-  const sbPlayer = orderedPlayers[sbIdx];
-  sbPlayer.chips -= gameState.smallBlind;
-  gameState.pot += gameState.smallBlind;
-
-  // Big blind is next player after small blind
-  const bbIdx = (sbIdx + 1) % orderedPlayers.length;
-  const bbPlayer = orderedPlayers[bbIdx];
-  bbPlayer.chips -= gameState.bigBlind;
-  gameState.pot += gameState.bigBlind;
-  gameState.currentBet = gameState.bigBlind;
-
-  // First to act is next player after big blind
-  const firstToActIdx = (bbIdx + 1) % orderedPlayers.length;
-  const firstToActPlayer = orderedPlayers[firstToActIdx];
-  gameState.currentPosition = firstToActPlayer.position;
-  firstToActPlayer.isCurrent = true;
-
-  // Broadcast updated game state
-  broadcastToTable(tableId, {
-    type: 'gameState',
-    payload: gameState,
-  });
-
-  // Broadcast game started event
-  broadcastToTable(tableId, {
-    type: 'gameStarted',
-    payload: {
-      dealerPosition: gameState.dealerPosition,
-      smallBlind: gameState.smallBlind,
-      bigBlind: gameState.bigBlind,
-      currentPosition: gameState.currentPosition
-    },
-  });
+  resetAndDealCards();
 }
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws: ExtendedWebSocket, req) => {
   const { query } = parse(req.url || '', true);
   const tableId = Array.isArray(query.tableId) ? query.tableId[0] : query.tableId;
   const playerId = Array.isArray(query.playerId) ? query.playerId[0] : query.playerId;
@@ -212,6 +242,15 @@ wss.on('connection', (ws, req) => {
     ws.close();
     return;
   }
+
+  // Set up heartbeat
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+
+  // Send immediate ping to establish connection
+  ws.ping();
 
   // Get game state first to check table capacity
   const gameState = gameStates.get(tableId);
@@ -227,11 +266,21 @@ wss.on('connection', (ws, req) => {
     }
   }
 
-  // Check for existing connection and close it
+  // Check for existing connection and handle reconnection
   const existingConnection = connections.get(tableId)?.get(playerId);
   if (existingConnection) {
-    console.log(`Closing existing connection for player ${playerId}`);
-    existingConnection.close(1000, 'New connection established');
+    console.log(`Existing connection found for player ${playerId}`);
+    // Only close if it's in a broken state
+    if (existingConnection.readyState !== WebSocket.OPEN) {
+      console.log(`Closing broken connection for player ${playerId}`);
+      existingConnection.close(1000, 'Connection replaced');
+      connections.get(tableId)?.delete(playerId);
+    } else {
+      // If the existing connection is healthy, close the new one
+      console.log(`Rejecting duplicate connection for player ${playerId}`);
+      ws.close(1000, 'Duplicate connection');
+      return;
+    }
   }
 
   // Clear any existing disconnection timer
@@ -294,6 +343,7 @@ wss.on('connection', (ws, req) => {
         chips: 1000,
         isActive: true,
         isCurrent: false,
+        currentBet: 0,
       };
       gameState.players.push(newPlayer);
       console.log(`Added new player ${playerId} at position ${nextPosition}`);
@@ -376,6 +426,24 @@ wss.on('connection', (ws, req) => {
       connections.delete(tableId);
     }
   });
+});
+
+// Set up heartbeat interval
+const interval = setInterval(() => {
+  wss.clients.forEach((wsClient) => {
+    const ws = wsClient as ExtendedWebSocket;
+    if (ws.isAlive === false) {
+      console.log('Client failed heartbeat, terminating');
+      return ws.terminate();
+    }
+    
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, HEARTBEAT_INTERVAL);
+
+wss.on('close', () => {
+  clearInterval(interval);
 });
 
 function broadcastToTable(tableId: string, message: any) {

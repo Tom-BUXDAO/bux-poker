@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, PlayerAction } from '@/types/poker';
+import { Card, PlayerAction, Player, TablePosition } from '@/types/poker';
 import { pokerWebSocket } from '@/lib/poker/client-websocket';
+import ChipStack from './ChipStack';
+import PotDisplay from './PotDisplay';
 
 const AVATAR_URLS = [
   'https://nftstorage.link/ipfs/bafybeigo7gili5wuojsywuwoift34g6mvvq56lrbk3ikp7r365a23es7je/4.png',
@@ -14,18 +16,6 @@ const AVATAR_URLS = [
   'https://nftstorage.link/ipfs/bafybeiaiytmqc6dsko33hs2sylqizbl3hqw3liwuzvfi34uua6556erpb4/47.png',
   'https://arweave.net/dNT1LK37y22CFgs-e2uX5AmJ2G9NBAb1xORT9P_wyiE?ext=png'
 ];
-
-interface Player {
-  id: string;
-  name: string;
-  chips: number;
-  position: number;
-  cards?: Card[];
-  isActive: boolean;
-  isCurrent: boolean;
-  avatarUrl?: string;
-  isDealer: boolean;
-}
 
 interface ChatMessage {
   playerId: string;
@@ -180,7 +170,7 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
   const activePlayersCount = players.filter(p => p.isActive).length;
 
   // Render a single seat
-  const SeatComponent = ({ position }: { position: number }) => {
+  const SeatComponent = ({ position }: { position: TablePosition }) => {
     const player = players.find(p => p.position === position);
     const isBottomHalf = [4, 5, 6, 7].includes(position);
     
@@ -189,24 +179,8 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
         {/* Player info container - only shown when seat is occupied */}
         {player && (
           <>
-            {/* Player Cards - For bottom half seats, show above avatar */}
-            {player.cards && isBottomHalf && (
-              <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 flex gap-1">
-                {player.cards.map((card, i) => (
-                  <div key={i} className="w-12 h-18 relative">
-                    <img
-                      src={player.id === currentPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
-                      alt={player.id === currentPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
-                      className="w-full h-full object-contain rounded-sm shadow-md"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Player info - For bottom half seats, show below avatar */}
+            {/* Player info */}
             <div className={`absolute ${isBottomHalf ? '-bottom-6' : '-top-6'} left-1/2 transform -translate-x-1/2 bg-gray-900/90 px-4 py-2 whitespace-nowrap z-10 flex items-center gap-2 border-2 border-gray-600 rounded`}>
-              {/* Dealer Button */}
               {player.isDealer && (
                 <div className="w-4 h-4 bg-white rounded-full text-black text-[10px] flex items-center justify-center font-bold">
                   D
@@ -217,9 +191,9 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
               <span className="text-yellow-400 text-xs font-bold">{player.chips}</span>
             </div>
 
-            {/* Player Cards - For top half seats, show below avatar */}
-            {player.cards && !isBottomHalf && (
-              <div className="absolute -bottom-14 left-1/2 transform -translate-x-1/2 flex gap-1">
+            {/* Player Cards */}
+            {player.cards && (
+              <div className={`absolute ${isBottomHalf ? 'bottom-16' : '-bottom-14'} left-1/2 transform -translate-x-1/2 flex gap-1`}>
                 {player.cards.map((card, i) => (
                   <div key={i} className="w-12 h-18 relative">
                     <img
@@ -231,10 +205,18 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
                 ))}
               </div>
             )}
+
+            {/* Player Bet */}
+            {player.currentBet > 0 && (
+              <ChipStack 
+                amount={player.currentBet} 
+                position={position} 
+              />
+            )}
           </>
         )}
         
-        {/* Seat circle - highlight if it's player's turn */}
+        {/* Seat circle */}
         <div className={`w-20 h-20 rounded-full flex flex-col items-center justify-center overflow-hidden border-2 ${
           player?.isCurrent 
             ? 'border-yellow-400 shadow-lg shadow-yellow-400/50' 
@@ -266,11 +248,10 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
           <div className="h-[70%] relative">
             {/* The actual table surface - smaller with padding for seats */}
             <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
-              {/* Table content (pot, etc) */}
+              {/* Table content */}
               <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
-                <div className="bg-black/50 text-white px-3 py-1 rounded-full text-sm">
-                  Pot: ${pot}
-                </div>
+                {/* Pot Display */}
+                {pot > 0 && <PotDisplay amount={pot} />}
 
                 {/* Start Game Button */}
                 {gameStatus === 'waiting' && activePlayersCount >= 2 && (
@@ -291,37 +272,37 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
               </div>
             </div>
 
-            {/* Fixed seat positions - now using SeatComponent */}
+            {/* Fixed seat positions */}
             {/* Top seats */}
             <div className="absolute top-0 left-1/3 transform -translate-x-1/2">
-              <SeatComponent position={1} />
+              <SeatComponent position={1 as TablePosition} />
             </div>
             <div className="absolute top-0 right-1/3 transform translate-x-1/2">
-              <SeatComponent position={2} />
+              <SeatComponent position={2 as TablePosition} />
             </div>
 
             {/* Right seats */}
             <div className="absolute top-1/4 right-16 transform -translate-y-1/2">
-              <SeatComponent position={3} />
+              <SeatComponent position={3 as TablePosition} />
             </div>
             <div className="absolute bottom-1/4 right-16 transform translate-y-1/2">
-              <SeatComponent position={4} />
+              <SeatComponent position={4 as TablePosition} />
             </div>
 
             {/* Bottom seats */}
             <div className="absolute bottom-0 right-1/3 transform translate-x-1/2">
-              <SeatComponent position={5} />
+              <SeatComponent position={5 as TablePosition} />
             </div>
             <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2">
-              <SeatComponent position={6} />
+              <SeatComponent position={6 as TablePosition} />
             </div>
 
             {/* Left seats */}
             <div className="absolute bottom-1/4 left-16 transform translate-y-1/2">
-              <SeatComponent position={7} />
+              <SeatComponent position={7 as TablePosition} />
             </div>
             <div className="absolute top-1/4 left-16 transform -translate-y-1/2">
-              <SeatComponent position={8} />
+              <SeatComponent position={8 as TablePosition} />
             </div>
           </div>
 
@@ -448,13 +429,13 @@ function getPlayerPosition(position: number): string {
   return positions[position as keyof typeof positions] || '';
 }
 
-function findNextAvailablePosition(players: Player[]): number {
-  const takenPositions = players.map(p => p.position);
-  let position = 2;
-  while (takenPositions.includes(position) && position <= 8) {
-    position++;
+function findNextAvailablePosition(players: Player[]): TablePosition {
+  const takenPositions = new Set(players.map(p => p.position));
+  let position = 2 as TablePosition;
+  while (takenPositions.has(position) && position <= 8) {
+    position = ((position + 1) as TablePosition);
   }
-  return position <= 8 ? position : 2;
+  return position <= 8 ? position : (2 as TablePosition);
 }
 
 function findNextAvailableAvatar(players: Player[]): string {
