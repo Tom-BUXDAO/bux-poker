@@ -41,6 +41,8 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const announcedPlayers = useRef<Set<string>>(new Set());
   const [gameStatus, setGameStatus] = useState('waiting');
+  const [showSystemMessages, setShowSystemMessages] = useState(true);
+  const [showPlayerChat, setShowPlayerChat] = useState(true);
 
   // Auto scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -145,6 +147,7 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
       payload: message
     });
 
+    // Clear input without adding the message locally
     setChatInput('');
   };
 
@@ -164,6 +167,49 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
     pokerWebSocket.sendMessage({
       type: 'startGame'
     });
+  };
+
+  const handleBetSize = (size: 'half' | 'twoThirds' | 'pot' | 'allin') => {
+    if (!currentPlayer) return;
+
+    switch (size) {
+      case 'half':
+        setBetAmount(Math.floor(pot * 0.5).toString());
+        break;
+      case 'twoThirds':
+        setBetAmount(Math.floor(pot * 0.67).toString());
+        break;
+      case 'pot':
+        setBetAmount(pot.toString());
+        break;
+      case 'allin':
+        const player = players.find(p => p.id === currentPlayer.id);
+        if (player) {
+          setBetAmount(player.chips.toString());
+        }
+        break;
+    }
+  };
+
+  const handleBetChange = (direction: 'increase' | 'decrease') => {
+    if (!currentPlayer || !isConnected) return;
+
+    const minBet = 20; // Minimum bet value
+    const currentValue = parseInt(betAmount) || 0;
+    const newBet = direction === 'increase' 
+      ? currentValue + minBet 
+      : Math.max(currentValue - minBet, minBet);
+    
+    setBetAmount(newBet.toString());
+  };
+
+  const handleBetInput = (value: string) => {
+    if (!currentPlayer || !isConnected) return;
+
+    const newBet = parseInt(value);
+    if (newBet >= 0 && newBet <= currentBet * 2) {
+      setBetAmount(newBet.toString());
+    }
   };
 
   // Get active players count
@@ -307,9 +353,9 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
           </div>
 
           {/* Controls Container - remaining height */}
-          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center">
+          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
             {/* Large Card Display */}
-            <div className="flex-none mr-8 bg-black/30 p-4 rounded-lg">
+            <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
               {players.find(p => p.id === currentPlayer?.id)?.cards ? (
                 <div className="flex gap-2">
                   {players.find(p => p.id === currentPlayer?.id)?.cards?.map((card, i) => (
@@ -327,82 +373,177 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
               )}
             </div>
 
+            {/* Hand Evaluator */}
+            <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
+              <div className="text-white text-sm font-bold">Best Hand</div>
+              <div className="text-yellow-400 text-lg font-bold mt-1">
+                {communityCards.length > 0 ? "High Card: Ace" : "Waiting for cards..."}
+              </div>
+            </div>
+
             {/* Action Panel */}
-            <div className="flex-1 flex items-center justify-center gap-3">
-              <button
-                onClick={() => handleAction('fold')}
-                className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition-colors"
-              >
-                Fold
-              </button>
-              <button
-                onClick={() => handleAction('check')}
-                className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
-              >
-                Check
-              </button>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={betAmount}
-                  onChange={(e) => setBetAmount(e.target.value)}
-                  className="w-20 px-3 py-2 rounded text-sm bg-gray-700 text-white"
-                  placeholder="Bet"
-                />
+            <div className="flex-1 flex flex-col gap-3 items-end">
+              {/* Top row - main actions */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleAction('fold')}
+                  className="bg-red-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-red-700 transition-colors border border-white"
+                >
+                  FOLD
+                </button>
+                <button
+                  onClick={() => handleAction('call')}
+                  className="bg-blue-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-blue-700 transition-colors border border-white"
+                >
+                  CALL
+                </button>
                 <button
                   onClick={() => handleAction('raise')}
-                  className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
+                  className="bg-green-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 border border-white"
                 >
-                  Raise
+                  <span>RAISE</span>
+                  <span>{betAmount || currentBet * 2}</span>
                 </button>
+              </div>
+
+              {/* Bottom row - bet sizing and input */}
+              <div className="flex items-center gap-3">
+                <div className="flex gap-3 w-[8.5rem]">
+                  <button
+                    onClick={() => handleBetSize('half')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    1/2
+                  </button>
+                  <button
+                    onClick={() => handleBetSize('twoThirds')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    2/3
+                  </button>
+                </div>
+                <div className="flex gap-3 w-[8.5rem]">
+                  <button
+                    onClick={() => handleBetSize('pot')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    POT
+                  </button>
+                  <button
+                    onClick={() => handleBetSize('allin')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    ALL IN
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 w-[8.5rem]">
+                  <button
+                    onClick={() => handleBetChange('decrease')}
+                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    value={betAmount}
+                    onChange={(e) => handleBetInput(e.target.value)}
+                    className="w-20 px-3 py-2 bg-white text-black text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    placeholder={`${currentBet * 2}`}
+                  />
+                  <button
+                    onClick={() => handleBetChange('increase')}
+                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         {/* Chat Window */}
-        <div className="w-64 bg-gray-800 flex flex-col rounded-lg">
-          <div className="p-2 border-b border-gray-700">
-            <h2 className="text-white font-bold text-xs">Table Chat</h2>
+        <div className="w-80 bg-gray-800 flex flex-col rounded-lg h-[calc(100vh-2rem)]">
+          <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showSystemMessages}
+                  onChange={() => setShowSystemMessages(!showSystemMessages)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 font-bold">CHAT</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPlayerChat}
+                  onChange={() => setShowPlayerChat(!showPlayerChat)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+              </label>
+            </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {chatMessages.map((msg, i) => (
-              <div 
-                key={i} 
-                className={`${
-                  msg.playerId === 'system' 
-                    ? 'text-gray-400 italic text-xs' 
-                    : msg.playerId === currentPlayer?.id
-                      ? 'text-blue-400 text-xs'
-                      : 'text-white text-xs'
-                }`}
-              >
-                {msg.playerId !== 'system' && (
-                  <span className="font-bold">
-                    {players.find(p => p.id === msg.playerId)?.name || msg.playerId}:
-                  </span>
-                )}{' '}
-                {msg.message}
-              </div>
-            ))}
+          <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0 max-h-[calc(100%-6rem)]">
+            {chatMessages
+              .filter(msg => (
+                (msg.playerId === 'system' && showSystemMessages) ||
+                (msg.playerId !== 'system' && showPlayerChat)
+              ))
+              .map((msg, i) => (
+                <div 
+                  key={i} 
+                  className={`${
+                    msg.playerId === 'system' 
+                      ? 'bg-gray-900/50 text-gray-300 text-[11px] py-1.5 px-2 rounded border border-gray-700/50' 
+                      : 'flex flex-col gap-0.5'
+                  }`}
+                >
+                  {msg.playerId !== 'system' && (
+                    <span className="text-[10px] text-gray-400 px-2">
+                      {players.find(p => p.id === msg.playerId)?.name || msg.playerId}
+                    </span>
+                  )}
+                  {msg.playerId === 'system' ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                      <span>{msg.message}</span>
+                    </div>
+                  ) : (
+                    <div className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] ${
+                      msg.playerId === currentPlayer?.id
+                        ? 'bg-blue-600/50 text-white ml-auto rounded-tr-none'
+                        : 'bg-gray-700/50 text-white rounded-tl-none'
+                    }`}>
+                      {msg.message}
+                    </div>
+                  )}
+                </div>
+              ))}
             <div ref={chatEndRef} />
           </div>
 
-          <div className="h-12 p-2 border-t border-gray-700">
-            <form onSubmit={handleSendChat} className="flex gap-1 h-full">
+          <div className="flex-none h-12 p-2 border-t border-gray-700">
+            <form onSubmit={handleSendChat} className="flex gap-2 h-full">
               <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1 bg-gray-900 text-white rounded px-2 py-1 text-xs"
+                className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                 disabled={!isConnected}
               />
               <button
                 type="submit"
                 disabled={!isConnected || !chatInput.trim()}
-                className="bg-blue-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
               >
                 Send
               </button>
