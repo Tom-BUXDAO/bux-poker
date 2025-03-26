@@ -17,6 +17,7 @@ interface Player {
   cards?: { rank: string; suit: string }[];
   isDealer?: boolean;
   currentBet: number;
+  name: string;
 }
 
 interface GameState {
@@ -159,76 +160,98 @@ function handleGameStart(tableId: string) {
   const dealerPosition = activePlayers[dealerIndex].position;
   gameState.dealerPosition = dealerPosition;
 
-  // Reset player states and deal cards
-  const resetAndDealCards = () => {
-    // Reset all player states
-    gameState.players.forEach(player => {
-      player.currentBet = 0;
-      player.cards = [];
-    });
+  // Reset all player states
+  gameState.players.forEach(player => {
+    player.currentBet = 0;
+    player.cards = [];
+    player.isDealer = player.position === dealerPosition;
+  });
 
-    // Set blinds
-    const smallBlindPosition = 2; // Seat 2
-    const bigBlindPosition = 3;   // Seat 3
-
-    // Find players in blind positions and set their bets
-    const smallBlindPlayer = gameState.players.find(p => p.position === smallBlindPosition);
-    const bigBlindPlayer = gameState.players.find(p => p.position === bigBlindPosition);
-
-    if (smallBlindPlayer) {
-      smallBlindPlayer.currentBet = 20;
+  // Get players in clockwise order
+  const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
+  const dealerIdx = orderedPlayers.findIndex(p => p.position === dealerPosition);
+  
+  // Announce dealer
+  const dealerPlayer = orderedPlayers[dealerIdx];
+  broadcastToTable(tableId, {
+    type: 'chat',
+    payload: {
+      playerId: 'system',
+      message: `${dealerPlayer.name} is the dealer`,
+      timestamp: new Date()
     }
-    if (bigBlindPlayer) {
-      bigBlindPlayer.currentBet = 40;
+  });
+
+  // Small blind is next player after dealer
+  const sbIdx = (dealerIdx + 1) % orderedPlayers.length;
+  const sbPlayer = orderedPlayers[sbIdx];
+  sbPlayer.chips -= gameState.smallBlind;
+  sbPlayer.currentBet = gameState.smallBlind;
+  gameState.pot += gameState.smallBlind;
+
+  // Announce small blind
+  broadcastToTable(tableId, {
+    type: 'chat',
+    payload: {
+      playerId: 'system',
+      message: `${sbPlayer.name} posts small blind of ${gameState.smallBlind}`,
+      timestamp: new Date()
     }
+  });
 
-    // Deal cards to all players
-    dealCards(gameState);
+  // Big blind is next player after small blind
+  const bbIdx = (sbIdx + 1) % orderedPlayers.length;
+  const bbPlayer = orderedPlayers[bbIdx];
+  bbPlayer.chips -= gameState.bigBlind;
+  bbPlayer.currentBet = gameState.bigBlind;
+  gameState.pot += gameState.bigBlind;
+  gameState.currentBet = gameState.bigBlind;
 
-    // Get players in clockwise order (they're already ordered by position)
-    const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
-    const dealerIdx = orderedPlayers.findIndex(p => p.position === dealerPosition);
-    
-    // Small blind is next player after dealer
-    const sbIdx = (dealerIdx + 1) % orderedPlayers.length;
-    const sbPlayer = orderedPlayers[sbIdx];
-    sbPlayer.chips -= gameState.smallBlind;
-    sbPlayer.currentBet = gameState.smallBlind;
-    gameState.pot += gameState.smallBlind;
+  // Announce big blind
+  broadcastToTable(tableId, {
+    type: 'chat',
+    payload: {
+      playerId: 'system',
+      message: `${bbPlayer.name} posts big blind of ${gameState.bigBlind}`,
+      timestamp: new Date()
+    }
+  });
 
-    // Big blind is next player after small blind
-    const bbIdx = (sbIdx + 1) % orderedPlayers.length;
-    const bbPlayer = orderedPlayers[bbIdx];
-    bbPlayer.chips -= gameState.bigBlind;
-    bbPlayer.currentBet = gameState.bigBlind;
-    gameState.pot += gameState.bigBlind;
-    gameState.currentBet = gameState.bigBlind;
+  // Deal cards to all players
+  dealCards(gameState);
 
-    // First to act is next player after big blind
-    const firstToActIdx = (bbIdx + 1) % orderedPlayers.length;
-    const firstToActPlayer = orderedPlayers[firstToActIdx];
-    gameState.currentPosition = firstToActPlayer.position;
-    firstToActPlayer.isCurrent = true;
+  // Announce dealing
+  broadcastToTable(tableId, {
+    type: 'chat',
+    payload: {
+      playerId: 'system',
+      message: `Dealing cards to all players`,
+      timestamp: new Date()
+    }
+  });
 
-    // Broadcast updated game state
-    broadcastToTable(tableId, {
-      type: 'gameState',
-      payload: gameState,
-    });
+  // First to act is next player after big blind
+  const firstToActIdx = (bbIdx + 1) % orderedPlayers.length;
+  const firstToActPlayer = orderedPlayers[firstToActIdx];
+  gameState.currentPosition = firstToActPlayer.position;
+  firstToActPlayer.isCurrent = true;
 
-    // Broadcast game started event
-    broadcastToTable(tableId, {
-      type: 'gameStarted',
-      payload: {
-        dealerPosition: gameState.dealerPosition,
-        smallBlind: gameState.smallBlind,
-        bigBlind: gameState.bigBlind,
-        currentPosition: gameState.currentPosition
-      },
-    });
-  }
+  // Broadcast updated game state
+  broadcastToTable(tableId, {
+    type: 'gameState',
+    payload: gameState,
+  });
 
-  resetAndDealCards();
+  // Broadcast game started event
+  broadcastToTable(tableId, {
+    type: 'gameStarted',
+    payload: {
+      dealerPosition: gameState.dealerPosition,
+      smallBlind: gameState.smallBlind,
+      bigBlind: gameState.bigBlind,
+      currentPosition: gameState.currentPosition
+    },
+  });
 }
 
 wss.on('connection', (ws: ExtendedWebSocket, req) => {
@@ -344,6 +367,7 @@ wss.on('connection', (ws: ExtendedWebSocket, req) => {
         isActive: true,
         isCurrent: false,
         currentBet: 0,
+        name: '',
       };
       gameState.players.push(newPlayer);
       console.log(`Added new player ${playerId} at position ${nextPosition}`);
