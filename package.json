@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "ws": "ts-node -P tsconfig.server.json src/server/websocket.ts"
+    "ws": "ts-node -r tsconfig-paths/register -P tsconfig.server.json src/server/websocket.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",
@@ -38,6 +38,7 @@
     "prisma": "^6.5.0",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5"
   }
 }

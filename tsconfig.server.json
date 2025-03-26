@@ -8,8 +8,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "baseUrl": "src",
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
-  "include": ["src/server/**/*"],
+  "include": ["src/server/**/*", "src/types/**/*", "src/lib/**/*"],
   "exclude": ["node_modules"]
 } 
