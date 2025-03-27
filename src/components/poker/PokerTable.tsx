@@ -31,6 +31,7 @@ interface WebSocketMessage {
 interface PokerTableProps {
   tableId: string;
   currentPlayer?: Player;
+  onConnectionChange?: (isConnected: boolean) => void;
 }
 
 const CARD_RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
@@ -150,6 +151,8 @@ interface PotWinner {
 
 // Add this at the top of the file after imports
 const pulsingBorder = `
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap');
+  
   @keyframes pulse-border {
     0% { border-color: rgba(234, 179, 8, 0.8); }
     50% { border-color: rgba(234, 179, 8, 0.4); }
@@ -161,7 +164,7 @@ const pulsingBorder = `
   }
 `;
 
-export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) {
+export default function PokerTable({ tableId, currentPlayer, onConnectionChange }: PokerTableProps) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [communityCards, setCommunityCards] = useState<Card[]>([]);
   const [pot, setPot] = useState(0);
@@ -203,11 +206,13 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
       pokerWebSocket.onConnected(() => {
         console.log('WebSocket connected');
         setIsConnected(true);
+        onConnectionChange?.(true);
       });
 
       pokerWebSocket.onDisconnected(() => {
         console.log('WebSocket disconnected');
         setIsConnected(false);
+        onConnectionChange?.(false);
       });
 
       pokerWebSocket.on('gameState', (state: any) => {
@@ -275,7 +280,7 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
         pokerWebSocket.cleanup();
       };
     }
-  }, [tableId, currentPlayer?.id]);
+  }, [currentPlayer?.id, onConnectionChange]);
 
   const addChatMessage = (message: ChatMessage) => {
     setChatMessages(prev => [...prev, message]);
@@ -576,6 +581,19 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
             <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
               {/* Table content */}
               <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
+                {/* Solana Logo with BUX DAO text */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex items-center -space-x-16">
+                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40">BUX</span>
+                    <img 
+                      src="/solana.svg" 
+                      alt="Solana Logo" 
+                      className="w-64 h-64 [filter:invert(1)_blur(2px)] opacity-20"
+                    />
+                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40">DAO</span>
+                  </div>
+                </div>
+
                 {/* Pot Distribution Message */}
                 {potDistributionMessage && (
                   <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 px-6 py-3 rounded-lg border-2 border-yellow-400 shadow-lg z-20">
@@ -612,13 +630,6 @@ export default function PokerTable({ tableId, currentPlayer }: PokerTableProps) 
                     Start Game
                   </button>
                 )}
-              </div>
-
-              {/* Connection Status */}
-              <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs ${
-                isConnected ? 'bg-green-500' : 'bg-red-500'
-              } text-white z-10`}>
-                {isConnected ? 'Connected' : 'Disconnected'}
               </div>
             </div>
 

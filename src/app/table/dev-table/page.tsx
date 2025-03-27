@@ -3,19 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PokerTable from '@/components/poker/PokerTable';
-
-interface Player {
-  id: string;
-  name: string;
-  chips: number;
-  position: number;
-  isActive: boolean;
-  isCurrent: boolean;
-}
+import { Player, TablePosition } from '@/types/poker';
 
 export default function DevTablePage() {
   const router = useRouter();
   const [player, setPlayer] = useState<Player | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     // Check for player info in localStorage
@@ -34,8 +27,12 @@ export default function DevTablePage() {
       // Add required properties for the poker table
       setPlayer({
         ...playerData,
+        position: 1 as TablePosition,
         isActive: true,
         isCurrent: true,
+        currentBet: 0,
+        totalBetThisRound: 0,
+        hasActed: false
       });
     } catch (error) {
       console.error('Failed to parse player data:', error);
@@ -60,11 +57,18 @@ export default function DevTablePage() {
     <div className="h-screen flex flex-col">
       {/* Header */}
       <div className="flex justify-between items-center p-4">
-        <div>
+        <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold">Development Table</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Playing as: {player.name}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-gray-600 dark:text-gray-400">
+              Playing as: {player.name}
+            </p>
+            <div className={`px-2 py-0.5 rounded-full text-xs ${
+              isConnected ? 'bg-green-500' : 'bg-red-500'
+            } text-white`}>
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </div>
+          </div>
         </div>
         <button
           onClick={handleLeaveTable}
@@ -79,6 +83,7 @@ export default function DevTablePage() {
         <PokerTable
           tableId="dev-table"
           currentPlayer={player}
+          onConnectionChange={setIsConnected}
         />
       </div>
     </div>

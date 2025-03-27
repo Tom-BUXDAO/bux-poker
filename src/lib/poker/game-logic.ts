@@ -1,4 +1,4 @@
-import { GameState, Player, Card, PlayerAction, ActionValidation } from '@/types/poker';
+import { GameState, Player, Card, PlayerAction, ActionValidation, TablePosition } from '@/types/poker';
 import { evaluatePlayerHand, determineWinners } from './hand-evaluator';
 
 export function createDeck(): Card[] {
@@ -159,10 +159,30 @@ export function findNextActivePlayer(gameState: GameState, currentPosition: numb
   const activePlayers = gameState.players.filter(p => p.isActive);
   if (activePlayers.length === 0) return null;
 
-  const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
-  const currentIdx = orderedPlayers.findIndex(p => p.position === currentPosition);
+  // Get all positions in ascending order
+  const positions = [...new Set(activePlayers.map(p => p.position))].sort((a, b) => a - b) as TablePosition[];
   
-  return orderedPlayers[(currentIdx + 1) % orderedPlayers.length];
+  // Find the index of current position in our ordered positions
+  const currentPosIndex = positions.indexOf(currentPosition as TablePosition);
+  
+  if (currentPosIndex === -1) {
+    // If current position is not found among active players,
+    // find the next valid position after the current absolute position
+    const nextPos = positions.find(pos => pos > currentPosition);
+    if (nextPos) {
+      return activePlayers.find(p => p.position === nextPos) || null;
+    }
+    // If no higher position found, wrap around to the lowest position
+    return activePlayers.find(p => p.position === positions[0]) || null;
+  }
+  
+  // Try next position
+  if (currentPosIndex < positions.length - 1) {
+    return activePlayers.find(p => p.position === positions[currentPosIndex + 1]) || null;
+  }
+  
+  // Wrap around to the beginning
+  return activePlayers.find(p => p.position === positions[0]) || null;
 }
 
 export function calculateSidePots(gameState: GameState): void {
