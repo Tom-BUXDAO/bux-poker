@@ -181,6 +181,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
   const [showPlayerChat, setShowPlayerChat] = useState(true);
   const [originalCards, setOriginalCards] = useState<Map<string, Card[]>>(new Map());
   const [potDistributionMessage, setPotDistributionMessage] = useState<string>('');
+  const [gameStarted, setGameStarted] = useState(false);
 
   // Calculate default raise amount
   const minBet = gameState?.smallBlind * 2 || 20; // Use big blind from game state if available
@@ -219,6 +220,9 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
         console.log('Received game state:', state);
         setGameState(state);  // Store the full game state
         
+        // Update gameStarted based on game status
+        setGameStarted(state.status !== 'waiting');
+
         const updatedPlayers = state.players.map((p: Player) => {
           // Store original cards when they are dealt
           if (p.cards && p.cards.length > 0) {
@@ -558,11 +562,11 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
           timestamp: new Date()
         });
 
-        // Start new hand after 0.5 seconds
+        // Start new hand after 5 seconds
         setTimeout(() => {
           setPotDistributionMessage('');
           handleStartGame();
-        }, 500);
+        }, 5000);
       }
     }
   }, [gameState?.status, gameState?.phase]);
@@ -581,54 +585,63 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
             <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
               {/* Table content */}
               <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
+                {/* Pot Display - at the top */}
+                {pot > 0 && (
+                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
+                    <PotDisplay amount={pot} />
+                  </div>
+                )}
+
                 {/* Solana Logo with BUX DAO text */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="flex items-center -space-x-16">
-                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40">BUX</span>
+                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40 z-0">BUX</span>
                     <img 
                       src="/solana.svg" 
                       alt="Solana Logo" 
-                      className="w-64 h-64 [filter:invert(1)_blur(2px)] opacity-20"
+                      className="w-64 h-64 [filter:invert(1)_blur(2px)] opacity-20 z-0"
                     />
-                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40">DAO</span>
+                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40 z-0">DAO</span>
                   </div>
                 </div>
 
-                {/* Pot Distribution Message */}
-                {potDistributionMessage && (
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 px-6 py-3 rounded-lg border-2 border-yellow-400 shadow-lg z-20">
-                    <span className="text-yellow-400 text-lg font-bold whitespace-nowrap">
-                      {potDistributionMessage}
-                    </span>
+                {/* Game Elements Container */}
+                <div className="relative z-10 flex flex-col items-center gap-4">
+                  {/* Pot Distribution Message */}
+                  {potDistributionMessage && (
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 px-6 py-3 rounded-lg border-2 border-yellow-400 shadow-lg z-20">
+                      <span className="text-yellow-400 text-lg font-bold whitespace-nowrap">
+                        {potDistributionMessage}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Community Cards */}
+                  {communityCards.length > 0 && (
+                    <div className="flex gap-2 mb-4">
+                      {communityCards.map((card, i) => (
+                        <div key={i} className="w-16 h-24 relative">
+                          <img
+                            src={`/cards/${card.rank}${card.suit}.png`}
+                            alt={`${card.rank}${card.suit}`}
+                            className="w-full h-full object-contain rounded-md shadow-lg"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Start Button */}
+                {gameStatus === 'waiting' && (
+                  <div className="absolute inset-0 flex items-center justify-center z-20">
+                    <button
+                      onClick={handleStartGame}
+                      className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                    >
+                      Start Game
+                    </button>
                   </div>
-                )}
-
-                {/* Community Cards */}
-                {communityCards.length > 0 && (
-                  <div className="flex gap-2 mb-4">
-                    {communityCards.map((card, i) => (
-                      <div key={i} className="w-16 h-24 relative">
-                        <img
-                          src={`/cards/${card.rank}${card.suit}.png`}
-                          alt={`${card.rank}${card.suit}`}
-                          className="w-full h-full object-contain rounded-md shadow-lg"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Pot Display */}
-                {pot > 0 && <PotDisplay amount={pot} />}
-
-                {/* Start Game Button */}
-                {gameStatus === 'waiting' && activePlayersCount >= 2 && (
-                  <button
-                    onClick={handleStartGame}
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full text-sm font-bold transition-colors shadow-lg"
-                  >
-                    Start Game
-                  </button>
                 )}
               </div>
             </div>
