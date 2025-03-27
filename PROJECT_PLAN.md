@@ -101,6 +101,9 @@ NEXTAUTH_SECRET=
 
 # Vercel
 NEXT_PUBLIC_WEBSOCKET_URL=
+
+# WebSocket Server
+SOCKET_PORT=3001
 ```
 
 ## Getting Started
