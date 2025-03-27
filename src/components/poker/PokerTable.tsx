@@ -182,6 +182,9 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
   const [originalCards, setOriginalCards] = useState<Map<string, Card[]>>(new Map());
   const [potDistributionMessage, setPotDistributionMessage] = useState<string>('');
   const [gameStarted, setGameStarted] = useState(false);
+  const [eliminationMessage, setEliminationMessage] = useState<string>('');
+  const [isEliminated, setIsEliminated] = useState(false);
+  const [finishPosition, setFinishPosition] = useState<number | null>(null);
 
   // Calculate default raise amount
   const minBet = gameState?.smallBlind * 2 || 20; // Use big blind from game state if available
@@ -260,6 +263,48 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
         setPot(state.pot || 0);
         setCurrentBet(state.currentBet || 0);
         setGameStatus(state.status || 'waiting');
+
+        // Handle player elimination only after hand is complete
+        if (currentPlayer && state.status === 'finished' && state.phase === 'showdown') {
+          const playerState = state.players.find((p: Player) => p.id === currentPlayer.id);
+          if (playerState && playerState.chips === 0 && !isEliminated) {
+            const remainingPlayers = state.players.filter((p: Player) => p.chips > 0).length;
+            const position = state.players.length - remainingPlayers;
+            setFinishPosition(position);
+            setIsEliminated(true);
+            setEliminationMessage(`Game Over! You finished in ${position}${getOrdinalSuffix(position)} place!`);
+          }
+        }
+
+        // Handle all-in situations
+        if (state.status === 'playing') {
+          const activePlayers = state.players.filter((p: Player) => !p.folded);
+          const playersWithChips = activePlayers.filter((p: Player) => p.chips > 0);
+          
+          // Check if all active players are all-in
+          const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
+          
+          // If everyone is all-in, deal all remaining community cards with delays
+          if (allPlayersAllIn) {
+            // Deal remaining cards based on current community cards
+            if (state.communityCards.length === 0) {
+              // Deal flop after 1 second
+              setTimeout(() => {
+                pokerWebSocket.sendMessage({ type: 'dealCommunityCards', payload: { street: 'flop' } });
+              }, 1000);
+            } else if (state.communityCards.length === 3) {
+              // Deal turn after 2 seconds
+              setTimeout(() => {
+                pokerWebSocket.sendMessage({ type: 'dealCommunityCards', payload: { street: 'turn' } });
+              }, 2000);
+            } else if (state.communityCards.length === 4) {
+              // Deal river after 2 seconds
+              setTimeout(() => {
+                pokerWebSocket.sendMessage({ type: 'dealCommunityCards', payload: { street: 'river' } });
+              }, 2000);
+            }
+          }
+        }
       });
 
       pokerWebSocket.on('playerLeft', (playerId: string) => {
@@ -315,6 +360,18 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
 
     // Get current game state for the player
     const currentPlayerState = players.find(p => p.id === currentPlayer.id);
+    
+    // Check if all players are all-in
+    const activePlayers = players.filter(p => !p.folded);
+    const playersWithChips = activePlayers.filter(p => p.chips > 0);
+    const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
+
+    // If everyone is all-in, don't allow any more actions
+    if (allPlayersAllIn) {
+      console.log('All players are all-in, no more actions allowed');
+      return;
+    }
+
     console.log('Attempting action:', {
       action,
       playerId: currentPlayer.id,
@@ -455,6 +512,14 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
     const isFolded = player && !player.isActive;
     const isShowdown = gameState?.status === 'finished' && gameState?.phase === 'showdown';
     
+    // Check if all active players are all-in
+    const activePlayers = players.filter(p => !p.folded);
+    const playersWithChips = activePlayers.filter(p => p.chips > 0);
+    const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
+    
+    // Show cards if it's showdown or all players are all-in
+    const shouldShowCards = isShowdown || allPlayersAllIn;
+    
     // Determine if this player is the winner during showdown
     const isWinner = isShowdown && player?.isActive && (() => {
       const { winnerId } = determineWinner(players, communityCards);
@@ -495,13 +560,13 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
             </div>
 
             {/* Player Cards - show if player hasn't folded or if it's showdown */}
-            {player.cards && (isShowdown ? player.isActive : !isFolded) && (
+            {player.cards && (shouldShowCards ? player.isActive : !isFolded) && (
               <div className={`absolute ${isBottomHalf ? 'bottom-16' : '-bottom-14'} left-1/2 transform -translate-x-1/2 flex gap-1`}>
                 {player.cards.map((card, i) => (
                   <div key={i} className="w-12 h-18 relative">
                     <img
-                      src={isShowdown || player.id === currentPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
-                      alt={isShowdown || player.id === currentPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
+                      src={isShowdown || allPlayersAllIn || player.id === currentPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
+                      alt={isShowdown || allPlayersAllIn || player.id === currentPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
                       className={`w-full h-full object-contain rounded-sm shadow-md ${
                         isFolded ? 'opacity-50 grayscale' : ''
                       } ${isWinner ? 'ring-2 ring-yellow-400' : ''}`}
@@ -571,340 +636,362 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
     }
   }, [gameState?.status, gameState?.phase]);
 
+  // Helper function for ordinal suffixes
+  const getOrdinalSuffix = (n: number): string => {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return s[(v - 20) % 10] || s[v] || s[0];
+  };
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Add the style tag for the animation */}
+    <div className="relative w-full h-full">
       <style>{pulsingBorder}</style>
-      
-      <div className="flex-1 flex gap-3 p-3">
-        {/* Main content (table + actions) */}
-        <div className="flex-1 flex flex-col gap-3 overflow-visible">
-          {/* Poker Table - 70% height */}
-          <div className="h-[70%] relative overflow-visible">
-            {/* The actual table surface - smaller with padding for seats */}
-            <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
-              {/* Table content */}
-              <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
-                {/* Pot Display - at the top */}
-                {pot > 0 && (
-                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
-                    <PotDisplay amount={pot} />
-                  </div>
-                )}
-
-                {/* Solana Logo with BUX DAO text */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex items-center -space-x-16">
-                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40 z-0">BUX</span>
-                    <img 
-                      src="/solana.svg" 
-                      alt="Solana Logo" 
-                      className="w-64 h-64 [filter:invert(1)_blur(2px)] opacity-20 z-0"
-                    />
-                    <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40 z-0">DAO</span>
-                  </div>
-                </div>
-
-                {/* Game Elements Container */}
-                <div className="relative z-10 flex flex-col items-center gap-4">
-                  {/* Pot Distribution Message */}
-                  {potDistributionMessage && (
-                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 px-6 py-3 rounded-lg border-2 border-yellow-400 shadow-lg z-20">
-                      <span className="text-yellow-400 text-lg font-bold whitespace-nowrap">
-                        {potDistributionMessage}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Community Cards */}
-                  {communityCards.length > 0 && (
-                    <div className="flex gap-2 mb-4">
-                      {communityCards.map((card, i) => (
-                        <div key={i} className="w-16 h-24 relative">
-                          <img
-                            src={`/cards/${card.rank}${card.suit}.png`}
-                            alt={`${card.rank}${card.suit}`}
-                            className="w-full h-full object-contain rounded-md shadow-lg"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Start Button */}
-                {gameStatus === 'waiting' && (
-                  <div className="absolute inset-0 flex items-center justify-center z-20">
-                    <button
-                      onClick={handleStartGame}
-                      className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                    >
-                      Start Game
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Fixed seat positions */}
-            {/* Top seats */}
-            <div className="absolute top-0 left-1/3 transform -translate-x-1/2">
-              <SeatComponent position={1 as TablePosition} />
-            </div>
-            <div className="absolute top-0 right-1/3 transform translate-x-1/2">
-              <SeatComponent position={2 as TablePosition} />
-            </div>
-
-            {/* Right seats */}
-            <div className="absolute top-1/4 right-16 transform -translate-y-1/2">
-              <SeatComponent position={3 as TablePosition} />
-            </div>
-            <div className="absolute bottom-1/4 right-16 transform translate-y-1/2">
-              <SeatComponent position={4 as TablePosition} />
-            </div>
-
-            {/* Bottom seats */}
-            <div className="absolute bottom-0 right-1/3 transform translate-x-1/2">
-              <SeatComponent position={5 as TablePosition} />
-            </div>
-            <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2">
-              <SeatComponent position={6 as TablePosition} />
-            </div>
-
-            {/* Left seats */}
-            <div className="absolute bottom-1/4 left-16 transform translate-y-1/2">
-              <SeatComponent position={7 as TablePosition} />
-            </div>
-            <div className="absolute top-1/4 left-16 transform -translate-y-1/2">
-              <SeatComponent position={8 as TablePosition} />
-            </div>
-          </div>
-
-          {/* Controls Container - remaining height */}
-          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
-            {/* Large Card Display */}
-            <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
-              {currentPlayer?.id && originalCards.has(currentPlayer.id) ? (
-                <div className="flex gap-2">
-                  {(originalCards.get(currentPlayer.id) || []).map((card, i) => (
-                    <div key={i} className="w-24 h-36 relative">
-                      <img
-                        src={`/cards/${card.rank}${card.suit}.png`}
-                        alt={`${card.rank}${card.suit}`}
-                        className={`w-full h-full object-contain rounded-md shadow-lg ${
-                          !players.find(p => p.id === currentPlayer?.id)?.isActive 
-                            ? 'opacity-50 grayscale' 
-                            : ''
-                        }`}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-gray-400 text-sm">Your cards will appear here</div>
-              )}
-            </div>
-
-            {/* Hand Evaluator */}
-            <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
-              <div className="text-white text-sm font-bold">Best Hand</div>
-              {currentPlayer?.id && originalCards.has(currentPlayer.id) ? (
-                <div className="text-yellow-400 text-lg font-bold mt-1">
-                  {evaluateHand(
-                    originalCards.get(currentPlayer.id) || [],
-                    communityCards
-                  ).description}
-                </div>
-              ) : (
-                <div className="text-yellow-400 text-lg font-bold mt-1">
-                  Waiting for cards...
-                </div>
-              )}
-            </div>
-
-            {/* Action Panel */}
-            <div className="flex-1 flex flex-col gap-3 items-end">
-              {/* Top row - main actions */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => handleAction('fold')}
-                  className="bg-red-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-red-700 transition-colors border border-white"
-                >
-                  FOLD
-                </button>
-                {/* Determine if player can check */}
-                {(() => {
-                  const playerState = players.find(p => p.id === currentPlayer?.id);
-                  const canCheck = playerState && (
-                    (playerState.currentBet === currentBet) || // Player has matched the current bet
-                    (currentBet === 0 && !playerState.hasActed) // No bet and player hasn't acted
-                  );
-
-                  return (
-                    <button
-                      onClick={() => handleAction(canCheck ? 'check' : 'call')}
-                      className="bg-blue-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-blue-700 transition-colors border border-white"
-                    >
-                      {canCheck ? 'CHECK' : 'CALL'}
-                    </button>
-                  );
-                })()}
-                <button
-                  onClick={() => handleAction('raise')}
-                  className="bg-green-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 border border-white"
-                >
-                  <span>{currentBet === 0 ? 'BET' : 'RAISE'}</span>
-                  <span>{betAmount || currentBet * 2}</span>
-                </button>
-              </div>
-
-              {/* Bottom row - bet sizing and input */}
-              <div className="flex items-center gap-3">
-                <div className="flex gap-3 w-[8.5rem]">
-                  <button
-                    onClick={() => handleBetSize('half')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                  >
-                    1/2
-                  </button>
-                  <button
-                    onClick={() => handleBetSize('twoThirds')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                  >
-                    2/3
-                  </button>
-                </div>
-                <div className="flex gap-3 w-[8.5rem]">
-                  <button
-                    onClick={() => handleBetSize('pot')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                  >
-                    POT
-                  </button>
-                  <button
-                    onClick={() => handleBetSize('allin')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                  >
-                    ALL IN
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 w-[8.5rem]">
-                  <button
-                    onClick={() => handleBetChange('decrease')}
-                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    value={betAmount}
-                    onChange={(e) => handleBetInput(e.target.value)}
-                    className="w-20 px-3 py-2 bg-white text-black text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    placeholder={`${currentBet * 2}`}
-                  />
-                  <button
-                    onClick={() => handleBetChange('increase')}
-                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
+      {/* Elimination Message */}
+      {eliminationMessage && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/80">
+          <div className="bg-gray-900 p-8 rounded-lg border-2 border-yellow-400 text-center">
+            <h2 className="text-3xl font-bold text-yellow-400 mb-4">{eliminationMessage}</h2>
+            <p className="text-white text-lg">Thanks for playing!</p>
           </div>
         </div>
+      )}
+      
+      <div className="h-full flex flex-col">
+        <div className="flex-1 flex gap-3 p-3">
+          <div className="flex-1 flex flex-col gap-3 overflow-visible">
+            <div className="h-[70%] relative overflow-visible">
+              <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
+                <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
+                  {pot > 0 && (
+                    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
+                      <PotDisplay amount={pot} />
+                    </div>
+                  )}
 
-        {/* Chat Window */}
-        <div className="w-80 h-full flex flex-col bg-gray-800 rounded-lg">
-          {/* Chat Header */}
-          <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showSystemMessages}
-                  onChange={() => setShowSystemMessages(!showSystemMessages)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 font-bold">CHAT</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPlayerChat}
-                  onChange={() => setShowPlayerChat(!showPlayerChat)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
-              </label>
-            </div>
-          </div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex items-center -space-x-16">
+                      <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40 z-0">BUX</span>
+                      <img 
+                        src="/solana.svg" 
+                        alt="Solana Logo" 
+                        className="w-64 h-64 [filter:invert(1)_blur(2px)] opacity-20 z-0"
+                      />
+                      <span className="text-transparent text-7xl [-webkit-text-stroke:3px_#FFE135] [text-stroke:3px_#FFE135] [font-family:'Poppins',sans-serif] font-black tracking-wider opacity-40 z-0">DAO</span>
+                    </div>
+                  </div>
 
-          {/* Chat Messages */}
-          <div className="h-[550px] overflow-y-auto">
-            <div className="p-3 space-y-2">
-              {chatMessages
-                .filter(msg => (
-                  (msg.playerId === 'system' && showSystemMessages) ||
-                  (msg.playerId !== 'system' && showPlayerChat)
-                ))
-                .map((msg, i) => (
-                  <div 
-                    key={i} 
-                    className={`${
-                      msg.playerId === 'system' 
-                        ? 'bg-gray-900/50 text-gray-300 text-[11px] py-1.5 px-2 rounded border border-gray-700/50' 
-                        : 'flex flex-col gap-0.5'
-                    }`}
-                  >
-                    {msg.playerId !== 'system' && (
-                      <span className="text-[10px] text-gray-400 px-2">
-                        {players.find(p => p.id === msg.playerId)?.name || msg.playerId}
-                      </span>
-                    )}
-                    {msg.playerId === 'system' ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                        <span>{msg.message}</span>
+                  <div className="relative z-10 flex flex-col items-center gap-4">
+                    {potDistributionMessage && (
+                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 px-6 py-3 rounded-lg border-2 border-yellow-400 shadow-lg z-20">
+                        <span className="text-yellow-400 text-lg font-bold whitespace-nowrap">
+                          {potDistributionMessage}
+                        </span>
                       </div>
-                    ) : (
-                      <div className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] ${
-                        msg.playerId === currentPlayer?.id
-                          ? 'bg-blue-600/50 text-white ml-auto rounded-tr-none'
-                          : 'bg-gray-700/50 text-white rounded-tl-none'
-                      }`}>
-                        {msg.message}
+                    )}
+
+                    {communityCards.length > 0 && (
+                      <div className="flex gap-2 mb-4">
+                        {communityCards.map((card, i) => (
+                          <div key={i} className="w-16 h-24 relative">
+                            <img
+                              src={`/cards/${card.rank}${card.suit}.png`}
+                              alt={`${card.rank}${card.suit}`}
+                              className="w-full h-full object-contain rounded-md shadow-lg"
+                            />
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                ))}
-              <div ref={chatEndRef} />
+
+                  {gameStatus === 'waiting' && (
+                    <div className="absolute inset-0 flex items-center justify-center z-20">
+                      <button
+                        onClick={handleStartGame}
+                        className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                      >
+                        Start Game
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="absolute top-0 left-1/3 transform -translate-x-1/2">
+                <SeatComponent position={1 as TablePosition} />
+              </div>
+              <div className="absolute top-0 right-1/3 transform translate-x-1/2">
+                <SeatComponent position={2 as TablePosition} />
+              </div>
+
+              <div className="absolute top-1/4 right-16 transform -translate-y-1/2">
+                <SeatComponent position={3 as TablePosition} />
+              </div>
+              <div className="absolute bottom-1/4 right-16 transform translate-y-1/2">
+                <SeatComponent position={4 as TablePosition} />
+              </div>
+
+              <div className="absolute bottom-0 right-1/3 transform translate-x-1/2">
+                <SeatComponent position={5 as TablePosition} />
+              </div>
+              <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2">
+                <SeatComponent position={6 as TablePosition} />
+              </div>
+
+              <div className="absolute bottom-1/4 left-16 transform translate-y-1/2">
+                <SeatComponent position={7 as TablePosition} />
+              </div>
+              <div className="absolute top-1/4 left-16 transform -translate-y-1/2">
+                <SeatComponent position={8 as TablePosition} />
+              </div>
+            </div>
+
+            <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
+              <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
+                {currentPlayer?.id && originalCards.has(currentPlayer.id) ? (
+                  <div className="flex gap-2">
+                    {(originalCards.get(currentPlayer.id) || []).map((card, i) => (
+                      <div key={i} className="w-24 h-36 relative">
+                        <img
+                          src={`/cards/${card.rank}${card.suit}.png`}
+                          alt={`${card.rank}${card.suit}`}
+                          className={`w-full h-full object-contain rounded-md shadow-lg ${
+                            !players.find(p => p.id === currentPlayer?.id)?.isActive 
+                              ? 'opacity-50 grayscale' 
+                              : ''
+                          }`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-gray-400 text-sm">Your cards will appear here</div>
+                )}
+              </div>
+
+              <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
+                <div className="text-white text-sm font-bold">Best Hand</div>
+                {currentPlayer?.id && originalCards.has(currentPlayer.id) ? (
+                  <div className="text-yellow-400 text-lg font-bold mt-1">
+                    {evaluateHand(
+                      originalCards.get(currentPlayer.id) || [],
+                      communityCards
+                    ).description}
+                  </div>
+                ) : (
+                  <div className="text-yellow-400 text-lg font-bold mt-1">
+                    Waiting for cards...
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 flex flex-col gap-3 items-end">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleAction('fold')}
+                    className="bg-red-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-red-700 transition-colors border border-white"
+                  >
+                    FOLD
+                  </button>
+                  {(() => {
+                    const playerState = players.find(p => p.id === currentPlayer?.id);
+                    const canCheck = playerState && (
+                      (playerState.currentBet === currentBet) ||
+                      (currentBet === 0 && !playerState.hasActed)
+                    );
+
+                    return (
+                      <button
+                        onClick={() => handleAction(canCheck ? 'check' : 'call')}
+                        className="bg-blue-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-blue-700 transition-colors border border-white"
+                      >
+                        {canCheck ? 'CHECK' : 'CALL'}
+                      </button>
+                    );
+                  })()}
+                  {(() => {
+                    const playerState = players.find(p => p.id === currentPlayer?.id);
+                    const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
+                    const canRaise = playerState && (playerState.chips > minRaiseAmount);
+                    
+                    return (
+                      <button
+                        onClick={() => handleAction('raise')}
+                        disabled={!canRaise}
+                        className={`${
+                          canRaise 
+                            ? 'bg-green-600 hover:bg-green-700' 
+                            : 'bg-gray-600 cursor-not-allowed'
+                        } text-white w-[8.5rem] py-4 rounded text-base font-bold transition-colors flex items-center justify-center gap-2 border border-white`}
+                      >
+                        <span>{currentBet === 0 ? 'BET' : 'RAISE'}</span>
+                        <span>{betAmount || currentBet * 2}</span>
+                      </button>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className={`flex gap-3 w-[8.5rem] ${
+                    (() => {
+                      const playerState = players.find(p => p.id === currentPlayer?.id);
+                      const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
+                      return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
+                    })()
+                  }`}>
+                    <button
+                      onClick={() => handleBetSize('half')}
+                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    >
+                      1/2
+                    </button>
+                    <button
+                      onClick={() => handleBetSize('twoThirds')}
+                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    >
+                      2/3
+                    </button>
+                  </div>
+                  <div className={`flex gap-3 w-[8.5rem] ${
+                    (() => {
+                      const playerState = players.find(p => p.id === currentPlayer?.id);
+                      const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
+                      return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
+                    })()
+                  }`}>
+                    <button
+                      onClick={() => handleBetSize('pot')}
+                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    >
+                      POT
+                    </button>
+                    <button
+                      onClick={() => handleBetSize('allin')}
+                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    >
+                      ALL IN
+                    </button>
+                  </div>
+                  <div className={`flex items-center gap-2 w-[8.5rem] ${
+                    (() => {
+                      const playerState = players.find(p => p.id === currentPlayer?.id);
+                      const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
+                      return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
+                    })()
+                  }`}>
+                    <button
+                      onClick={() => handleBetChange('decrease')}
+                      className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      value={betAmount}
+                      onChange={(e) => handleBetInput(e.target.value)}
+                      className="w-20 px-3 py-2 bg-white text-black text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder={`${currentBet * 2}`}
+                    />
+                    <button
+                      onClick={() => handleBetChange('increase')}
+                      className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Chat Input */}
-          <div className="flex-none h-12 p-2 border-t border-gray-700">
-            <form onSubmit={handleSendChat} className="flex gap-2 h-full">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={!isConnected}
-              />
-              <button
-                type="submit"
-                disabled={!isConnected || !chatInput.trim()}
-                className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
-              >
-                Send
-              </button>
-            </form>
+          <div className="w-80 h-full flex flex-col bg-gray-800 rounded-lg">
+            <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showSystemMessages}
+                    onChange={() => setShowSystemMessages(!showSystemMessages)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 font-bold">CHAT</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showPlayerChat}
+                    onChange={() => setShowPlayerChat(!showPlayerChat)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+                </label>
+              </div>
+            </div>
+
+            <div className="h-[550px] overflow-y-auto">
+              <div className="p-3 space-y-2">
+                {chatMessages
+                  .filter(msg => (
+                    (msg.playerId === 'system' && showSystemMessages) ||
+                    (msg.playerId !== 'system' && showPlayerChat)
+                  ))
+                  .map((msg, i) => (
+                    <div 
+                      key={i} 
+                      className={`${
+                        msg.playerId === 'system' 
+                          ? 'bg-gray-900/50 text-gray-300 text-[11px] py-1.5 px-2 rounded border border-gray-700/50' 
+                          : 'flex flex-col gap-0.5'
+                      }`}
+                    >
+                      {msg.playerId !== 'system' && (
+                        <span className="text-[10px] text-gray-400 px-2">
+                          {players.find(p => p.id === msg.playerId)?.name || msg.playerId}
+                        </span>
+                      )}
+                      {msg.playerId === 'system' ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                          <span>{msg.message}</span>
+                        </div>
+                      ) : (
+                        <div className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] ${
+                          msg.playerId === currentPlayer?.id
+                            ? 'bg-blue-600/50 text-white ml-auto rounded-tr-none'
+                            : 'bg-gray-700/50 text-white rounded-tl-none'
+                        }`}>
+                          {msg.message}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                <div ref={chatEndRef} />
+              </div>
+            </div>
+
+            <div className="flex-none h-12 p-2 border-t border-gray-700">
+              <form onSubmit={handleSendChat} className="flex gap-2 h-full">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Type a message..."
+                  className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  disabled={!isConnected}
+                />
+                <button
+                  type="submit"
+                  disabled={!isConnected || !chatInput.trim()}
+                  className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>

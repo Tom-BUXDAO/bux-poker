@@ -497,7 +497,8 @@ wss.on('connection', (ws: ExtendedWebSocket, req: any) => {
         currentBet: 0,
         name: playerId.slice(0, 8),
         hasActed: false,
-        totalBetThisRound: 0
+        totalBetThisRound: 0,
+        folded: false
       };
       gameState.players.push(newPlayer);
 

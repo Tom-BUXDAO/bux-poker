@@ -18,6 +18,7 @@ export interface Player {
   hasActed?: boolean;
   totalBetThisRound?: number;
   handResult?: HandResult;
+  folded: boolean;
 }
 
 export const PLAYER_ACTIONS = ['fold', 'check', 'call', 'raise', 'all-in'] as const;
