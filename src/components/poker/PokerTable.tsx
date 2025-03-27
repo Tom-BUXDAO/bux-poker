@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, PlayerAction, Player, TablePosition, GameState } from '@/types/poker';
 import pokerWebSocket from '@/lib/poker/client-websocket';
 import ChipStack from './ChipStack';
 import PotDisplay from './PotDisplay';
+import Image from 'next/image';
 
 const AVATAR_URLS = [
   'https://nftstorage.link/ipfs/bafybeigo7gili5wuojsywuwoift34g6mvvq56lrbk3ikp7r365a23es7je/4.png',
@@ -377,15 +378,16 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
     }
   };
 
-  const handleStartGame = () => {
-    if (!isConnected) return;
-
+  // Wrap handleStartGame in useCallback
+  const handleStartGame = useCallback(() => {
     console.log('Sending start game');
-    pokerWebSocket.sendMessage({
-      type: 'startGame',
-      payload: null
-    });
-  };
+    if (pokerWebSocket) {
+      pokerWebSocket.sendMessage({
+        type: 'startGame',
+        payload: {}
+      });
+    }
+  }, [pokerWebSocket]);
 
   const handleBetSize = (size: 'half' | 'twoThirds' | 'pot' | 'allin') => {
     if (!initialPlayer) return;
@@ -520,12 +522,18 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
               <div className={`absolute ${isBottomHalf ? 'bottom-16' : '-bottom-14'} left-1/2 transform -translate-x-1/2 flex gap-1`}>
                 {player.cards.map((card, i) => (
                   <div key={i} className="w-12 h-18 relative">
-                    <img
-                      src={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
-                      alt={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
+                    <Image
+                      src={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id 
+                        ? `/cards/${card.rank}${card.suit}.png` 
+                        : '/cards/blue_back.png'}
+                      alt={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id 
+                        ? `${card.rank} of ${card.suit}` 
+                        : 'Card back'}
+                      width={60}
+                      height={90}
                       className={`w-full h-full object-contain rounded-sm shadow-md ${
                         isFolded ? 'opacity-50 grayscale' : ''
-                      } ${isWinner ? 'ring-2 ring-yellow-400' : ''}`}
+                      }`}
                     />
                   </div>
                 ))}
@@ -553,9 +561,11 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
           !player ? 'bg-gray-800 opacity-60 font-bold' : 'bg-gray-800'
         }`}>
           {player ? (
-            <img 
-              src={AVATAR_URLS[position - 1]} 
+            <Image
+              src={AVATAR_URLS[position - 1]}
               alt={player.name}
+              width={80}
+              height={80}
               className={`w-full h-full object-cover ${isFolded ? 'opacity-50 grayscale' : ''}`}
             />
           ) : (
@@ -655,9 +665,11 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                       <div className="flex gap-2 mb-4">
                         {communityCards.map((card, i) => (
                           <div key={i} className="w-16 h-24 relative">
-                            <img
+                            <Image
                               src={`/cards/${card.rank}${card.suit}.png`}
-                              alt={`${card.rank}${card.suit}`}
+                              alt={`${card.rank} of ${card.suit}`}
+                              width={60}
+                              height={90}
                               className="w-full h-full object-contain rounded-md shadow-lg"
                             />
                           </div>
@@ -714,9 +726,11 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                   <div className="flex gap-2">
                     {(originalCards.get(initialPlayer.id) || []).map((card, i) => (
                       <div key={i} className="w-24 h-36 relative">
-                        <img
+                        <Image
                           src={`/cards/${card.rank}${card.suit}.png`}
-                          alt={`${card.rank}${card.suit}`}
+                          alt={`${card.rank} of ${card.suit}`}
+                          width={60}
+                          height={90}
                           className={`w-full h-full object-contain rounded-md shadow-lg ${
                             !players.find(p => p.id === initialPlayer?.id)?.isActive 
                               ? 'opacity-50 grayscale' 

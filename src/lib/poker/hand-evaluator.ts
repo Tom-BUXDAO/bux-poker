@@ -238,3 +238,47 @@ export function determineWinners(players: { id: string; cards: Card[] }[], commu
 
   return winners;
 }
+
+// Replace unused _ with descriptive variable names or remove if not needed
+const hasStraightFlush = (cards: Card[]): boolean => {
+  const suits = [...new Set(cards.map(card => card.suit))];
+  return suits.some(suit => {
+    const suitCards = cards.filter(card => card.suit === suit);
+    return hasStraight(suitCards);
+  });
+};
+
+const hasFourOfAKind = (cards: Card[]): boolean => {
+  const ranks = cards.map(card => card.rank);
+  return ranks.some(rank => 
+    ranks.filter(r => r === rank).length === 4
+  );
+};
+
+const hasFullHouse = (cards: Card[]): boolean => {
+  const ranks = cards.map(card => card.rank);
+  const uniqueRanks = [...new Set(ranks)];
+  return uniqueRanks.some(rank1 => 
+    ranks.filter(r => r === rank1).length === 3 &&
+    uniqueRanks.some(rank2 => 
+      rank2 !== rank1 && ranks.filter(r => r === rank2).length >= 2
+    )
+  );
+};
+
+const hasFlush = (cards: Card[]): boolean => {
+  const suits = cards.map(card => card.suit);
+  return [...new Set(suits)].some(suit => 
+    suits.filter(s => s === suit).length >= 5
+  );
+};
+
+const hasStraight = (cards: Card[]): boolean => {
+  const ranks = [...new Set(cards.map(card => card.rank))].sort();
+  return ranks.some((rank, i) => 
+    i <= ranks.length - 5 && 
+    ranks.slice(i, i + 5).every((r, j) => 
+      j === 0 || r === ranks[i + j - 1] + 1
+    )
+  );
+};

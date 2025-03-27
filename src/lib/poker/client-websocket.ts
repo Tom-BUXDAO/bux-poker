@@ -51,6 +51,7 @@ class PokerWebSocket {
     const url = `${host}?tableId=${tableId}&playerId=${playerId}${playerDataParam}`;
 
     try {
+      console.log('Connecting to WebSocket:', url);
       this.ws = new window.WebSocket(url);
 
       this.ws.onopen = () => {
@@ -60,10 +61,12 @@ class PokerWebSocket {
         this.reconnectDelay = 1000;
       };
 
-      this.ws.onclose = () => {
-        console.log('WebSocket closed:', this.ws?.readyState);
+      this.ws.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
         this.triggerEvent('disconnect');
-        this.reconnect();
+        if (event.code !== 1000) { // Don't reconnect if closed normally
+          this.reconnect();
+        }
       };
 
       this.ws.onerror = (error) => {

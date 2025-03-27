@@ -103,4 +103,9 @@ export interface BettingRound {
   currentPosition: number;
   lastRaisePosition?: number;
   complete: boolean;
+}
+
+export interface WebSocketMessage {
+  type: string;
+  payload: Record<string, unknown>;
 } 

@@ -17,6 +17,7 @@ import {
   moveToNextPhase,
   findNextActivePlayer
 } from '@/lib/poker/game-logic';
+import type { WebSocketMessage } from '@/types/poker';
 
 // Extend WebSocket type to include isAlive
 interface ExtendedWebSocket extends WebSocket {
@@ -393,11 +394,6 @@ function broadcastToTable(tableId: string, message: any) {
   for (const connection of tableConnections.values()) {
     connection.send(messageStr);
   }
-}
-
-interface WebSocketMessage {
-  type: string;
-  payload: Record<string, unknown>;
 }
 
 interface WebSocketError {

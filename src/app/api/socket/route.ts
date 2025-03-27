@@ -1,24 +1,62 @@
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { parse } from 'url';
+import type { WebSocketMessage, Player } from '@/types/poker';
 
 // Store the game state
 const gameStates = new Map();
 const connections = new Map();
 
 // Create HTTP server
-const httpServer = createServer();
+const httpServer = createServer((req, res) => {
+  // Handle CORS preflight
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+  
+  res.writeHead(200);
+  res.end('WebSocket server is running');
+});
 
 // Create WebSocket server
-const wss = new WebSocketServer({ server: httpServer });
+const wss = new WebSocketServer({ 
+  server: httpServer,
+  verifyClient: ({ req }, done) => {
+    // Allow all connections
+    done(true);
+  }
+});
 
 wss.on('connection', (ws, req) => {
+  console.log('New WebSocket connection');
   const { query } = parse(req.url || '', true);
-  const { tableId, playerId } = query;
+  const tableId = Array.isArray(query.tableId) ? query.tableId[0] : query.tableId;
+  const playerId = Array.isArray(query.playerId) ? query.playerId[0] : query.playerId;
+  const playerDataStr = Array.isArray(query.playerData) ? query.playerData[0] : query.playerData;
+
+  console.log('Connection params:', { tableId, playerId, playerDataStr });
 
   if (!tableId || !playerId) {
+    console.log('Missing required params, closing connection');
     ws.close();
     return;
+  }
+
+  let playerData: Partial<Player> = { id: playerId };
+  try {
+    if (playerDataStr) {
+      const parsed = JSON.parse(decodeURIComponent(playerDataStr));
+      playerData = { ...playerData, ...parsed };
+      console.log('Parsed player data:', playerData);
+    }
+  } catch (error) {
+    console.error('Failed to parse player data:', error);
   }
 
   // Store connection
@@ -35,20 +73,29 @@ wss.on('connection', (ws, req) => {
       pot: 0,
       currentBet: 0,
       currentPosition: 0,
+      smallBlind: 10,
+      bigBlind: 20,
+      status: 'waiting',
+      phase: 'pre-flop',
+      roundComplete: false,
     });
   }
 
   // Add player to the game
   const gameState = gameStates.get(tableId);
-  const playerExists = gameState.players.find((p: any) => p.id === playerId);
+  const playerExists = gameState.players.find((p: Player) => p.id === playerId);
 
   if (!playerExists) {
     gameState.players.push({
-      id: playerId,
+      ...playerData,
       position: gameState.players.length + 1,
-      chips: 1000,
       isActive: true,
       isCurrent: false,
+      isDealer: false,
+      cards: [],
+      currentBet: 0,
+      totalBet: 0,
+      folded: false,
     });
   }
 
@@ -68,7 +115,8 @@ wss.on('connection', (ws, req) => {
   // Handle messages
   ws.on('message', (data) => {
     try {
-      const message = JSON.parse(data.toString());
+      const message = JSON.parse(data.toString()) as WebSocketMessage;
+      console.log(`Received message from ${playerId}:`, message);
       
       if (message.type === 'playerAction') {
         handlePlayerAction(tableId, message.payload);
@@ -80,9 +128,10 @@ wss.on('connection', (ws, req) => {
 
   // Handle disconnection
   ws.on('close', () => {
+    console.log(`Player ${playerId} disconnected from table ${tableId}`);
     const gameState = gameStates.get(tableId);
     if (gameState) {
-      gameState.players = gameState.players.filter((p: any) => p.id !== playerId);
+      gameState.players = gameState.players.filter((p: Player) => p.id !== playerId);
       
       // Remove connection
       connections.get(tableId)?.delete(playerId);
@@ -93,7 +142,7 @@ wss.on('connection', (ws, req) => {
       // Broadcast player left and updated game state
       broadcastToTable(tableId, {
         type: 'playerLeft',
-        payload: playerId,
+        payload: { id: playerId },
       });
       broadcastToTable(tableId, {
         type: 'gameState',
@@ -103,7 +152,7 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-function broadcastToTable(tableId: string, message: any) {
+function broadcastToTable(tableId: string, message: WebSocketMessage) {
   const tableConnections = connections.get(tableId);
   if (!tableConnections) return;
 
@@ -113,7 +162,7 @@ function broadcastToTable(tableId: string, message: any) {
   }
 }
 
-function handlePlayerAction(tableId: string, payload: any) {
+function handlePlayerAction(tableId: string, payload: Record<string, unknown>) {
   const { action, playerId } = payload;
   const gameState = gameStates.get(tableId);
   
@@ -135,7 +184,14 @@ httpServer.listen(port, () => {
 });
 
 export async function GET(req: Request) {
-  return new Response('WebSocket server is running', { status: 200 });
+  return new Response('WebSocket server is running', { 
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    }
+  });
 }
 
 export const runtime = 'nodejs'; 
