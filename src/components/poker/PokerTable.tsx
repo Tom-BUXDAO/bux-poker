@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, PlayerAction, Player, TablePosition } from '@/types/poker';
+import { Card, PlayerAction, Player, TablePosition, GameState } from '@/types/poker';
 import pokerWebSocket from '@/lib/poker/client-websocket';
 import ChipStack from './ChipStack';
 import PotDisplay from './PotDisplay';
@@ -25,7 +25,20 @@ interface ChatMessage {
 
 interface WebSocketMessage {
   type: string;
-  payload: any;
+  payload: Record<string, unknown>;
+}
+
+interface GameStateEvent {
+  players: Player[];
+  communityCards: Card[];
+  pot: number;
+  currentBet: number;
+  currentPosition: number;
+  smallBlind: number;
+  bigBlind: number;
+  status: string;
+  phase: string;
+  roundComplete: boolean;
 }
 
 interface PokerTableProps {
@@ -164,88 +177,68 @@ const pulsingBorder = `
   }
 `;
 
-export default function PokerTable({ tableId, currentPlayer, onConnectionChange }: PokerTableProps) {
+export default function PokerTable({ tableId, currentPlayer: initialPlayer, onConnectionChange }: PokerTableProps) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
   const [players, setPlayers] = useState<Player[]>([]);
   const [communityCards, setCommunityCards] = useState<Card[]>([]);
   const [pot, setPot] = useState(0);
   const [currentBet, setCurrentBet] = useState(0);
   const [betAmount, setBetAmount] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [gameState, setGameState] = useState<any>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const announcedPlayers = useRef<Set<string>>(new Set());
-  const [gameStatus, setGameStatus] = useState('waiting');
-  const [showSystemMessages, setShowSystemMessages] = useState(true);
-  const [showPlayerChat, setShowPlayerChat] = useState(true);
-  const [originalCards, setOriginalCards] = useState<Map<string, Card[]>>(new Map());
-  const [potDistributionMessage, setPotDistributionMessage] = useState<string>('');
-  const [gameStarted, setGameStarted] = useState(false);
   const [eliminationMessage, setEliminationMessage] = useState<string>('');
   const [isEliminated, setIsEliminated] = useState(false);
-  const [finishPosition, setFinishPosition] = useState<number | null>(null);
+  const [potDistributionMessage, setPotDistributionMessage] = useState<string>('');
+  const [originalCards, setOriginalCards] = useState<Map<string, Card[]>>(new Map());
+  const [showSystemMessages, setShowSystemMessages] = useState(true);
+  const [showPlayerChat, setShowPlayerChat] = useState(true);
 
-  // Calculate default raise amount
-  const minBet = gameState?.smallBlind * 2 || 20; // Use big blind from game state if available
-  const defaultRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
-
-  useEffect(() => {
-    // Set default bet amount when currentBet changes
-    setBetAmount(defaultRaiseAmount.toString());
-  }, [currentBet, defaultRaiseAmount]);
+  // Refs
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const announcedPlayers = useRef<Set<string>>(new Set());
 
   // Auto scroll chat to bottom when new messages arrive
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && currentPlayer?.id) {
-      // Clean up any existing connections and event listeners
-      pokerWebSocket.cleanup();
-      announcedPlayers.current.clear();
+  // Calculate default raise amount
+  const minBet = gameState?.smallBlind ? gameState.smallBlind * 2 : 20;
+  const defaultRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
 
-      // Set up event listeners
-      pokerWebSocket.onConnected(() => {
-        console.log('WebSocket connected');
+  useEffect(() => {
+    if (!tableId || !initialPlayer) return;
+
+    const cleanup = () => {
+      pokerWebSocket.cleanup();
+    };
+
+    try {
+      // Clean up any existing connections
+      pokerWebSocket.cleanup();
+
+      // Set up WebSocket event handlers
+      pokerWebSocket.on('connect', () => {
         setIsConnected(true);
+        console.log('WebSocket connected');
         onConnectionChange?.(true);
       });
 
-      pokerWebSocket.onDisconnected(() => {
-        console.log('WebSocket disconnected');
+      pokerWebSocket.on('disconnect', () => {
         setIsConnected(false);
+        console.log('WebSocket disconnected');
         onConnectionChange?.(false);
       });
 
-      pokerWebSocket.on('gameState', (state: any) => {
-        console.log('Received game state:', state);
-        setGameState(state);  // Store the full game state
-        
-        // Update gameStarted based on game status
-        setGameStarted(state.status !== 'waiting');
-
-        const updatedPlayers = state.players.map((p: Player) => {
-          // Store original cards when they are dealt
-          if (p.cards && p.cards.length > 0) {
-            const cards = [...p.cards];  // Create a copy of the cards array
-            setOriginalCards(prev => new Map(prev).set(p.id, cards));
-          }
-
-          // Only announce new players once
-          if (!announcedPlayers.current.has(p.id)) {
-            announcedPlayers.current.add(p.id);
-            const playerName = p.name || p.id.slice(0, 8);
-            addChatMessage({
-              playerId: 'system',
-              message: `${playerName} joined the table`,
-              timestamp: new Date()
-            });
-          }
-
-          // Update player state with all properties from server
-          return {
+      pokerWebSocket.on('message', (data: Record<string, unknown>) => {
+        if (data.type === 'gameState') {
+          const state = data.payload as GameState;
+          console.log('Received game state:', state);
+          setGameState(state);
+          
+          // Update game state
+          const updatedPlayers = state.players.map((p: Player) => ({
             ...p,
             name: p.name || p.id.slice(0, 8),
             chips: p.chips || 0,
@@ -254,82 +247,83 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
             isCurrent: p.isCurrent ?? false,
             isDealer: p.isDealer ?? false,
             cards: p.cards || []
-          };
-        });
+          }));
 
-        // Update all state values from server
-        setPlayers(updatedPlayers);
-        setCommunityCards(state.communityCards || []);
-        setPot(state.pot || 0);
-        setCurrentBet(state.currentBet || 0);
-        setGameStatus(state.status || 'waiting');
-
-        // Handle player elimination only after hand is complete
-        if (currentPlayer && state.status === 'finished' && state.phase === 'showdown') {
-          const playerState = state.players.find((p: Player) => p.id === currentPlayer.id);
-          if (playerState && playerState.chips === 0 && !isEliminated) {
-            const remainingPlayers = state.players.filter((p: Player) => p.chips > 0).length;
-            const position = state.players.length - remainingPlayers;
-            setFinishPosition(position);
-            setIsEliminated(true);
-            setEliminationMessage(`Game Over! You finished in ${position}${getOrdinalSuffix(position)} place!`);
-          }
-        }
-
-        // Handle all-in situations
-        if (state.status === 'playing') {
-          const activePlayers = state.players.filter((p: Player) => !p.folded);
-          const playersWithChips = activePlayers.filter((p: Player) => p.chips > 0);
-          
-          // Check if all active players are all-in
-          const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
-          
-          // If everyone is all-in, deal all remaining community cards with delays
-          if (allPlayersAllIn) {
-            // Deal remaining cards based on current community cards
-            if (state.communityCards.length === 0) {
-              // Deal flop after 1 second
-              setTimeout(() => {
-                pokerWebSocket.sendMessage({ type: 'dealCommunityCards', payload: { street: 'flop' } });
-              }, 1000);
-            } else if (state.communityCards.length === 3) {
-              // Deal turn after 2 seconds
-              setTimeout(() => {
-                pokerWebSocket.sendMessage({ type: 'dealCommunityCards', payload: { street: 'turn' } });
-              }, 2000);
-            } else if (state.communityCards.length === 4) {
-              // Deal river after 2 seconds
-              setTimeout(() => {
-                pokerWebSocket.sendMessage({ type: 'dealCommunityCards', payload: { street: 'river' } });
-              }, 2000);
+          // Store hole cards for current player
+          if (initialPlayer) {
+            const currentPlayerState = updatedPlayers.find(p => p.id === initialPlayer.id);
+            if (currentPlayerState?.cards && currentPlayerState.cards.length > 0) {
+              setOriginalCards(prev => new Map(prev).set(initialPlayer.id, currentPlayerState.cards));
             }
           }
-        }
-      });
 
-      pokerWebSocket.on('playerLeft', (playerId: string) => {
-        const leavingPlayer = players.find(p => p.id === playerId);
-        if (leavingPlayer) {
+          setPlayers(updatedPlayers);
+          setCommunityCards(state.communityCards || []);
+          setPot(state.pot || 0);
+          setCurrentBet(state.currentBet || 0);
+
+          // Handle all-in situations
+          if (state.status === 'playing') {
+            const activePlayers = state.players.filter((p: Player) => !p.folded);
+            const playersWithChips = activePlayers.filter((p: Player) => p.chips > 0);
+            const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
+
+            if (allPlayersAllIn) {
+              if (state.communityCards.length === 0) {
+                setTimeout(() => {
+                  pokerWebSocket.sendMessage({
+                    type: 'dealCommunityCards',
+                    payload: { street: 'flop' }
+                  });
+                }, 1000);
+              } else if (state.communityCards.length === 3) {
+                setTimeout(() => {
+                  pokerWebSocket.sendMessage({
+                    type: 'dealCommunityCards',
+                    payload: { street: 'turn' }
+                  });
+                }, 2000);
+              } else if (state.communityCards.length === 4) {
+                setTimeout(() => {
+                  pokerWebSocket.sendMessage({
+                    type: 'dealCommunityCards',
+                    payload: { street: 'river' }
+                  });
+                }, 2000);
+              }
+            }
+          }
+        } else if (data.type === 'chat') {
+          const chatMessage = data.payload as ChatMessage;
+          addChatMessage({
+            ...chatMessage,
+            timestamp: new Date(chatMessage.timestamp)
+          });
+        } else if (data.type === 'systemMessage') {
           addChatMessage({
             playerId: 'system',
-            message: `${leavingPlayer.name} left the table`,
+            message: data.payload as string,
             timestamp: new Date()
           });
         }
       });
 
-      pokerWebSocket.on('chat', (data: ChatMessage) => {
-        addChatMessage(data);
+      // Initialize WebSocket connection with player data
+      pokerWebSocket.init({
+        tableId,
+        playerId: initialPlayer.id,
+        playerData: {
+          name: initialPlayer.name,
+          chips: initialPlayer.chips
+        }
       });
 
-      // Connect to WebSocket
-      pokerWebSocket.connect(tableId, currentPlayer.id);
-
-      return () => {
-        pokerWebSocket.cleanup();
-      };
+    } catch (error) {
+      console.error('Error in useEffect:', error);
     }
-  }, [currentPlayer?.id, onConnectionChange]);
+
+    return cleanup;
+  }, [tableId, initialPlayer, onConnectionChange]);
 
   const addChatMessage = (message: ChatMessage) => {
     setChatMessages(prev => [...prev, message]);
@@ -337,30 +331,26 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
 
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !currentPlayer || !isConnected) return;
+    if (!chatInput.trim() || !initialPlayer || !isConnected) return;
 
-    const message: WebSocketMessage = {
+    pokerWebSocket.sendMessage({
       type: 'chat',
       payload: {
-        playerId: currentPlayer.id,
+        playerId: initialPlayer.id,
         message: chatInput.trim(),
-        timestamp: new Date()
+        timestamp: new Date().toISOString()
       }
-    };
+    });
 
-    pokerWebSocket.sendMessage(message);
     setChatInput('');
   };
 
   const handleAction = (action: PlayerAction) => {
-    if (!currentPlayer || !isConnected) {
-      console.log('Cannot perform action:', { isConnected, currentPlayer });
-      return;
-    }
+    if (!initialPlayer || !isConnected) return;
 
-    // Get current game state for the player
-    const currentPlayerState = players.find(p => p.id === currentPlayer.id);
-    
+    const currentPlayerState = players.find(p => p.id === initialPlayer.id);
+    if (!currentPlayerState) return;
+
     // Check if all players are all-in
     const activePlayers = players.filter(p => !p.folded);
     const playersWithChips = activePlayers.filter(p => p.chips > 0);
@@ -372,52 +362,18 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
       return;
     }
 
-    console.log('Attempting action:', {
-      action,
-      playerId: currentPlayer.id,
-      playerState: currentPlayerState,
-      currentPosition: gameState?.currentPosition,
-      playerPosition: currentPlayerState?.position,
-      isCurrent: currentPlayerState?.isCurrent,
-      currentBet,
-      playerCurrentBet: currentPlayerState?.currentBet
+    // Send action to server
+    pokerWebSocket.sendMessage({
+      type: 'playerAction',
+      payload: {
+        type: action,
+        amount: action === 'raise' ? parseInt(betAmount) || currentBet * 2 : undefined
+      }
     });
 
-    // Check if it's the player's turn by comparing positions
-    const isPlayerTurn = currentPlayerState?.position === gameState?.currentPosition;
-    
-    if (!isPlayerTurn) {
-      console.log('Not your turn - position mismatch:', { 
-        playerId: currentPlayer.id,
-        playerPosition: currentPlayerState?.position,
-        currentGamePosition: gameState?.currentPosition,
-        isCurrent: currentPlayerState?.isCurrent
-      });
-      return;
-    }
-
-    // For raise action, validate bet amount
+    // Clear bet amount after action
     if (action === 'raise') {
-      const amount = parseInt(betAmount);
-      if (isNaN(amount) || amount <= 0) {
-        console.log('Invalid bet amount:', betAmount);
-        return;
-      }
-      console.log('Sending raise action:', { type: action, amount });
-      pokerWebSocket.sendAction({
-        type: action,
-        amount
-      });
-    } else {
-      // For check/call/fold actions
-      console.log('Sending action:', { 
-        type: action,
-        currentBet,
-        playerCurrentBet: currentPlayerState?.currentBet
-      });
-      pokerWebSocket.sendAction({
-        type: action
-      });
+      setBetAmount('');
     }
   };
 
@@ -432,7 +388,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
   };
 
   const handleBetSize = (size: 'half' | 'twoThirds' | 'pot' | 'allin') => {
-    if (!currentPlayer) return;
+    if (!initialPlayer) return;
 
     switch (size) {
       case 'half':
@@ -445,7 +401,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
         setBetAmount(pot.toString());
         break;
       case 'allin':
-        const player = players.find(p => p.id === currentPlayer.id);
+        const player = players.find(p => p.id === initialPlayer.id);
         if (player) {
           setBetAmount(player.chips.toString());
         }
@@ -454,7 +410,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
   };
 
   const handleBetChange = (direction: 'increase' | 'decrease') => {
-    if (!currentPlayer || !isConnected) return;
+    if (!initialPlayer || !isConnected) return;
 
     // Calculate minimum raise amount based on current bet
     const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
@@ -468,7 +424,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
   };
 
   const handleBetInput = (value: string) => {
-    if (!currentPlayer || !isConnected) return;
+    if (!initialPlayer || !isConnected) return;
 
     // Calculate minimum raise amount based on current bet
     const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
@@ -565,8 +521,8 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                 {player.cards.map((card, i) => (
                   <div key={i} className="w-12 h-18 relative">
                     <img
-                      src={isShowdown || allPlayersAllIn || player.id === currentPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
-                      alt={isShowdown || allPlayersAllIn || player.id === currentPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
+                      src={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id ? `/cards/${card.rank}${card.suit}.png` : '/cards/blue_back.png'}
+                      alt={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id ? `${card.rank}${card.suit}` : 'Card back'}
                       className={`w-full h-full object-contain rounded-sm shadow-md ${
                         isFolded ? 'opacity-50 grayscale' : ''
                       } ${isWinner ? 'ring-2 ring-yellow-400' : ''}`}
@@ -634,7 +590,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
         }, 5000);
       }
     }
-  }, [gameState?.status, gameState?.phase]);
+  }, [gameState?.status, gameState?.phase, players, communityCards, pot, handleStartGame]);
 
   // Helper function for ordinal suffixes
   const getOrdinalSuffix = (n: number): string => {
@@ -642,6 +598,12 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
     const v = n % 100;
     return s[(v - 20) % 10] || s[v] || s[0];
   };
+
+  // Handle null/undefined gameState properties safely
+  const smallBlind = gameState?.smallBlind ?? 10;
+  const bigBlind = gameState?.bigBlind ?? 20;
+  const currentPhase = gameState?.phase ?? 'pre-flop';
+  const gameStatus = gameState?.status ?? 'waiting';
 
   return (
     <div className="relative w-full h-full">
@@ -748,15 +710,15 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
 
             <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
               <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
-                {currentPlayer?.id && originalCards.has(currentPlayer.id) ? (
+                {initialPlayer?.id && originalCards.has(initialPlayer.id) ? (
                   <div className="flex gap-2">
-                    {(originalCards.get(currentPlayer.id) || []).map((card, i) => (
+                    {(originalCards.get(initialPlayer.id) || []).map((card, i) => (
                       <div key={i} className="w-24 h-36 relative">
                         <img
                           src={`/cards/${card.rank}${card.suit}.png`}
                           alt={`${card.rank}${card.suit}`}
                           className={`w-full h-full object-contain rounded-md shadow-lg ${
-                            !players.find(p => p.id === currentPlayer?.id)?.isActive 
+                            !players.find(p => p.id === initialPlayer?.id)?.isActive 
                               ? 'opacity-50 grayscale' 
                               : ''
                           }`}
@@ -771,10 +733,10 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
 
               <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
                 <div className="text-white text-sm font-bold">Best Hand</div>
-                {currentPlayer?.id && originalCards.has(currentPlayer.id) ? (
+                {initialPlayer?.id && originalCards.has(initialPlayer.id) ? (
                   <div className="text-yellow-400 text-lg font-bold mt-1">
                     {evaluateHand(
-                      originalCards.get(currentPlayer.id) || [],
+                      originalCards.get(initialPlayer.id) || [],
                       communityCards
                     ).description}
                   </div>
@@ -794,7 +756,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                     FOLD
                   </button>
                   {(() => {
-                    const playerState = players.find(p => p.id === currentPlayer?.id);
+                    const playerState = players.find(p => p.id === initialPlayer?.id);
                     const canCheck = playerState && (
                       (playerState.currentBet === currentBet) ||
                       (currentBet === 0 && !playerState.hasActed)
@@ -810,7 +772,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                     );
                   })()}
                   {(() => {
-                    const playerState = players.find(p => p.id === currentPlayer?.id);
+                    const playerState = players.find(p => p.id === initialPlayer?.id);
                     const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                     const canRaise = playerState && (playerState.chips > minRaiseAmount);
                     
@@ -834,7 +796,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                 <div className="flex items-center gap-3">
                   <div className={`flex gap-3 w-[8.5rem] ${
                     (() => {
-                      const playerState = players.find(p => p.id === currentPlayer?.id);
+                      const playerState = players.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                       return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
                     })()
@@ -854,7 +816,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                   </div>
                   <div className={`flex gap-3 w-[8.5rem] ${
                     (() => {
-                      const playerState = players.find(p => p.id === currentPlayer?.id);
+                      const playerState = players.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                       return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
                     })()
@@ -874,7 +836,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                   </div>
                   <div className={`flex items-center gap-2 w-[8.5rem] ${
                     (() => {
-                      const playerState = players.find(p => p.id === currentPlayer?.id);
+                      const playerState = players.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                       return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
                     })()
@@ -960,7 +922,7 @@ export default function PokerTable({ tableId, currentPlayer, onConnectionChange 
                         </div>
                       ) : (
                         <div className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] ${
-                          msg.playerId === currentPlayer?.id
+                          msg.playerId === initialPlayer?.id
                             ? 'bg-blue-600/50 text-white ml-auto rounded-tr-none'
                             : 'bg-gray-700/50 text-white rounded-tl-none'
                         }`}>

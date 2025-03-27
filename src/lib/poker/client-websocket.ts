@@ -1,81 +1,93 @@
 import { GameState, PlayerAction } from '@/types/poker';
 
-type MessageHandler = (data: any) => void;
-type ConnectionHandler = () => void;
+type EventHandler = () => void;
+type MessageHandler = (data: Record<string, unknown>) => void;
 
-interface WebSocketMessage {
-  type: string;
-  payload: any;
+interface WebSocketConfig {
+  tableId: string;
+  playerId: string;
+  playerData?: {
+    name: string;
+    chips: number;
+  };
 }
 
 class PokerWebSocket {
   private ws: WebSocket | null = null;
+  private config: WebSocketConfig | null = null;
+  private eventHandlers: Map<string, EventHandler[]> = new Map();
   private messageHandlers: Map<string, MessageHandler[]> = new Map();
-  private connectedHandlers: ConnectionHandler[] = [];
-  private disconnectedHandlers: ConnectionHandler[] = [];
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000; // Start with 1 second
-  private tableId: string | null = null;
-  private playerId: string | null = null;
+  private reconnectDelay = 1000;
 
-  constructor() {
-    this.messageHandlers = new Map();
+  public init(config: WebSocketConfig): void {
+    this.config = config;
+    this.connect();
   }
 
-  public connect(tableId: string, playerId: string): void {
-    this.tableId = tableId;
-    this.playerId = playerId;
-    this.createConnection();
+  public cleanup(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.eventHandlers.clear();
+    this.messageHandlers.clear();
   }
 
-  private createConnection(): void {
-    if (!this.tableId || !this.playerId) return;
+  public on(event: string, handler: EventHandler | MessageHandler): void {
+    const handlers = this.eventHandlers.get(event) || [];
+    handlers.push(handler as EventHandler);
+    this.eventHandlers.set(event, handlers);
+  }
+
+  private connect(): void {
+    if (!this.config) return;
+    const { tableId, playerId, playerData } = this.config;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = process.env.NEXT_PUBLIC_WEBSOCKET_URL || `${protocol}//${window.location.hostname}:3001`;
-    const url = `${host}?tableId=${this.tableId}&playerId=${this.playerId}`;
+    const playerDataParam = playerData ? `&playerData=${encodeURIComponent(JSON.stringify(playerData))}` : '';
+    const url = `${host}?tableId=${tableId}&playerId=${playerId}${playerDataParam}`;
 
     try {
-      this.ws = new WebSocket(url);
+      this.ws = new window.WebSocket(url);
 
       this.ws.onopen = () => {
         console.log('WebSocket connected');
+        this.triggerEvent('connect');
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
-        this.connectedHandlers.forEach(handler => handler());
       };
 
-      this.ws.onclose = (event) => {
-        console.log(`WebSocket closed: ${event.code} ${event.reason}`);
-        this.disconnectedHandlers.forEach(handler => handler());
-        this.handleReconnect();
+      this.ws.onclose = () => {
+        console.log('WebSocket closed:', this.ws?.readyState);
+        this.triggerEvent('disconnect');
+        this.reconnect();
       };
 
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        this.triggerEvent('error');
       };
 
       this.ws.onmessage = (event) => {
         try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          const handlers = this.messageHandlers.get(message.type);
-          if (handlers) {
-            handlers.forEach(handler => handler(message.payload));
-          }
+          const data = JSON.parse(event.data.toString());
+          this.triggerEvent('message', data);
         } catch (error) {
-          console.error('Failed to parse message:', error);
+          console.error('Error parsing message:', error);
         }
       };
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      this.handleReconnect();
+      console.error('Error creating WebSocket:', error);
+      this.reconnect();
     }
   }
 
-  private handleReconnect(): void {
+  private reconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Max reconnection attempts reached');
+      console.error('Max reconnection attempts reached');
       return;
     }
 
@@ -83,69 +95,32 @@ class PokerWebSocket {
     setTimeout(() => {
       this.reconnectAttempts++;
       this.reconnectDelay *= 2; // Exponential backoff
-      this.createConnection();
+      this.connect();
     }, this.reconnectDelay);
   }
 
-  public on(type: string, handler: MessageHandler): void {
-    if (!this.messageHandlers.has(type)) {
-      this.messageHandlers.set(type, []);
-    }
-    this.messageHandlers.get(type)?.push(handler);
-  }
-
-  public onConnected(handler: ConnectionHandler): void {
-    this.connectedHandlers.push(handler);
-  }
-
-  public onDisconnected(handler: ConnectionHandler): void {
-    this.disconnectedHandlers.push(handler);
-  }
-
-  public sendAction(action: { type: PlayerAction; amount?: number }): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.playerId) {
-      console.error('Cannot send action: WebSocket not ready or no player ID');
-      return;
-    }
-
-    const message = {
-      type: 'playerAction',
-      payload: {
-        ...action,
-        playerId: this.playerId,
-        timestamp: new Date().toISOString()
+  private triggerEvent(event: string, data?: Record<string, unknown>): void {
+    const handlers = this.eventHandlers.get(event) || [];
+    handlers.forEach(handler => {
+      if (data) {
+        (handler as MessageHandler)(data);
+      } else {
+        (handler as EventHandler)();
       }
-    };
-
-    console.log('Sending action message:', message);
-    this.ws.send(JSON.stringify(message));
+    });
   }
 
-  public sendMessage(message: WebSocketMessage): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('Cannot send message: WebSocket not ready');
+  public sendMessage(message: Record<string, unknown>): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.config) {
+      console.error('Cannot send message: WebSocket not ready or no config');
       return;
     }
 
-    // Add timestamp to payload if not present
-    if (message.payload && typeof message.payload === 'object') {
-      message.payload.timestamp = message.payload.timestamp || new Date().toISOString();
+    try {
+      this.ws.send(JSON.stringify(message));
+    } catch (error) {
+      console.error('Error sending message:', error);
     }
-
-    console.log('Sending message:', message);
-    this.ws.send(JSON.stringify(message));
-  }
-
-  public cleanup(): void {
-    if (this.ws) {
-      this.ws.close(1000, 'Client disconnecting');
-      this.ws = null;
-    }
-    this.messageHandlers.clear();
-    this.connectedHandlers = [];
-    this.disconnectedHandlers = [];
-    this.reconnectAttempts = 0;
-    this.reconnectDelay = 1000;
   }
 }
 

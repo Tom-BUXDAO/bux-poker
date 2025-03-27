@@ -197,40 +197,22 @@ interface PlayerActionPayload {
 }
 
 function isValidPlayerAction(payload: any): payload is PlayerActionPayload {
+  const hasValidObject = typeof payload === 'object' && payload !== null;
+  const hasValidPlayerId = typeof payload.playerId === 'string';
+  const hasValidType = typeof payload.type === 'string' && PLAYER_ACTIONS.includes(payload.type);
+  const hasValidAmount = !payload.amount || typeof payload.amount === 'number';
+  const hasValidTimestamp = !payload.timestamp || payload.timestamp instanceof Date;
+
   console.log('Validating player action:', payload);
-  
-  // Convert ISO string timestamp to Date if needed
-  if (typeof payload.timestamp === 'string') {
-    try {
-      payload.timestamp = new Date(payload.timestamp);
-    } catch (error) {
-      console.error('Invalid timestamp:', error);
-      return false;
-    }
-  }
+  console.log('Validation result:', {
+    hasValidObject,
+    hasValidPlayerId,
+    hasValidType,
+    hasValidAmount,
+    hasValidTimestamp
+  });
 
-  const isValid = (
-    typeof payload === 'object' &&
-    payload !== null &&
-    typeof payload.playerId === 'string' &&
-    typeof payload.type === 'string' &&
-    PLAYER_ACTIONS.includes(payload.type) &&
-    (payload.amount === undefined || typeof payload.amount === 'number') &&
-    payload.timestamp instanceof Date
-  );
-
-  if (!isValid) {
-    console.log('Validation failed:', {
-      hasValidObject: typeof payload === 'object' && payload !== null,
-      hasValidPlayerId: typeof payload.playerId === 'string',
-      hasValidType: typeof payload.type === 'string' && PLAYER_ACTIONS.includes(payload.type),
-      hasValidAmount: payload.amount === undefined || typeof payload.amount === 'number',
-      hasValidTimestamp: payload.timestamp instanceof Date
-    });
-  }
-
-  console.log('Action validation result:', isValid);
-  return isValid;
+  return hasValidObject && hasValidPlayerId && hasValidType;
 }
 
 function handlePlayerAction(tableId: string, payload: PlayerActionPayload) {
@@ -240,7 +222,7 @@ function handlePlayerAction(tableId: string, payload: PlayerActionPayload) {
     return;
   }
 
-  const { type, playerId, amount } = payload;
+  const { type: action, playerId, amount } = payload;
   const player = gameState.players.find((p: Player) => p.id === playerId);
   
   if (!player) {
@@ -254,7 +236,7 @@ function handlePlayerAction(tableId: string, payload: PlayerActionPayload) {
   }
 
   // Validate action
-  const validation = validatePlayerAction(gameState, playerId, type, amount);
+  const validation = validatePlayerAction(gameState, playerId, action, amount);
   if (!validation.isValid) {
     console.error('Invalid action:', validation.error);
     // Send error to player
@@ -268,10 +250,10 @@ function handlePlayerAction(tableId: string, payload: PlayerActionPayload) {
     return;
   }
 
-  console.log(`Processing ${type} action for player ${playerId}`);
+  console.log(`Processing ${action} action for player ${playerId}`);
 
   // Process the action
-  switch (type) {
+  switch (action) {
     case 'fold':
       player.isActive = false;
       player.cards = [];
@@ -414,13 +396,26 @@ function broadcastToTable(tableId: string, message: any) {
 }
 
 interface WebSocketMessage {
-  type: 'startGame' | 'playerAction' | 'chat';
-  payload: any;
+  type: string;
+  payload: Record<string, unknown>;
 }
 
 interface WebSocketError {
   type: 'error';
   payload: string;
+}
+
+interface ClientConnection {
+  ws: WebSocket;
+  playerId: string;
+  tableId: string;
+  lastHeartbeat?: number;
+}
+
+interface TableState {
+  players: Map<string, Player>;
+  gameState: GameState;
+  connections: Map<string, ClientConnection>;
 }
 
 // WebSocket connection handling
@@ -431,6 +426,19 @@ wss.on('connection', (ws: ExtendedWebSocket, req: any) => {
   if (typeof tableId !== 'string' || typeof playerId !== 'string') {
     ws.close();
     return;
+  }
+
+  // Parse player data from query
+  let playerName = playerId;
+  let playerChips = 1000;
+  try {
+    const playerData = JSON.parse(decodeURIComponent(query.playerData as string));
+    if (playerData) {
+      playerName = playerData.name || playerId;
+      playerChips = playerData.chips || 1000;
+    }
+  } catch (error) {
+    console.error('Error parsing player data:', error);
   }
 
   // Clear any existing disconnection timer
@@ -491,11 +499,11 @@ wss.on('connection', (ws: ExtendedWebSocket, req: any) => {
       const newPlayer: Player = {
         id: playerId,
         position: nextPosition,
-        chips: 1000,
+        chips: playerChips,
         isActive: true,
         isCurrent: false,
         currentBet: 0,
-        name: playerId.slice(0, 8),
+        name: playerName,
         hasActed: false,
         totalBetThisRound: 0,
         folded: false
@@ -528,10 +536,15 @@ wss.on('connection', (ws: ExtendedWebSocket, req: any) => {
           break;
         case 'playerAction':
           console.log(`Processing action for player ${playerId}:`, message.payload);
-          if (isValidPlayerAction(message.payload)) {
-            handlePlayerAction(tableId, message.payload);
+          const actionPayload = {
+            ...message.payload,
+            playerId,
+            timestamp: new Date()
+          };
+          if (isValidPlayerAction(actionPayload)) {
+            handlePlayerAction(tableId, actionPayload);
           } else {
-            console.error('Invalid player action:', message.payload);
+            console.error('Invalid player action:', actionPayload);
           }
           break;
         case 'chat':
