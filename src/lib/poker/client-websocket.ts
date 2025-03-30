@@ -15,261 +15,187 @@ interface WebSocketConfig {
 export class PokerWebSocket {
   private ws: WebSocket | null = null;
   private config: WebSocketConfig | null = null;
-  private isCleanedUp = false;
-  private intentionalClose = false;
+  private eventHandlers: { [key: string]: Set<Function> } = {};
+  private pingInterval: NodeJS.Timeout | null = null;
+  private isConnecting = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
-  private pingInterval: NodeJS.Timeout | null = null;
-  private eventHandlers: { [key: string]: Set<Function> } = {};
 
   init(config: WebSocketConfig) {
-    // Reset state on new initialization
-    this.isCleanedUp = false;
-    this.intentionalClose = false;
-    this.reconnectAttempts = 0;
+    if (!config.tableId || !config.playerId) {
+      console.error('Missing required config:', config);
+      return;
+    }
+
+    // Store config for reconnects
     this.config = config;
-
-    // Clear any existing timeouts
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
+    
+    // Don't initialize if already connecting
+    if (this.isConnecting) {
+      console.log('WebSocket already connecting');
+      return;
     }
 
+    // If already connected to the same table/player, don't reconnect
+    if (this.ws?.readyState === WebSocket.OPEN && 
+        this.config?.tableId === config.tableId && 
+        this.config?.playerId === config.playerId) {
+      console.log('WebSocket already connected to same table/player');
+      return;
+    }
+
+    // Close existing connection if any
+    this.cleanup(false);
+    
+    // Reset reconnect attempts on new init
+    this.reconnectAttempts = 0;
+    
+    // Connect
     this.connect();
   }
 
   private connect() {
-    if (this.isCleanedUp) return;
+    if (!this.config) {
+      console.error('Cannot connect: WebSocket not initialized with config');
+      return;
+    }
 
     try {
-      const { tableId, playerId, playerData } = this.config!;
+      const { tableId, playerId, playerData } = this.config;
       
-      // Validate required parameters
-      if (!tableId || !playerId) {
-        throw new Error('Missing required parameters: tableId and playerId');
-      }
-
-      // Create WebSocket URL
       const wsProtocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsHost = process.env.NEXT_PUBLIC_WS_HOST || 'localhost:3001';
       const wsUrl = new URL(`${wsProtocol}//${wsHost}`);
-
-      // Add query parameters with proper encoding
+      
+      // Add required parameters
       wsUrl.searchParams.append('tableId', encodeURIComponent(tableId));
       wsUrl.searchParams.append('playerId', encodeURIComponent(playerId));
       if (playerData) {
         wsUrl.searchParams.append('playerData', encodeURIComponent(JSON.stringify(playerData)));
       }
+
+      console.log('Connecting to WebSocket URL:', wsUrl.toString());
       
-      console.log('Attempting WebSocket connection to:', wsUrl.toString());
-      console.log('With player data:', {
-        tableId,
-        playerId,
-        playerData
-      });
-      
+      this.isConnecting = true;
       this.ws = new WebSocket(wsUrl.toString());
 
       this.ws.onopen = () => {
-        console.log('WebSocket connection established successfully');
+        console.log('WebSocket connected');
+        this.isConnecting = false;
         this.reconnectAttempts = 0;
         this.triggerEvent('connect');
         
         // Start ping interval
+        if (this.pingInterval) {
+          clearInterval(this.pingInterval);
+        }
         this.pingInterval = setInterval(() => {
           if (this.ws?.readyState === WebSocket.OPEN) {
-            console.log('Sending ping');
             this.ws.send(JSON.stringify({ type: 'ping' }));
-          } else {
-            console.log('Cannot send ping - connection not open:', this.ws?.readyState);
           }
         }, 30000);
       };
 
-      this.ws.onclose = (event) => {
-        console.log('WebSocket connection closed:', {
-          code: event.code,
-          reason: event.reason,
-          wasClean: event.wasClean
-        });
-        clearInterval(this.pingInterval!);
-        this.pingInterval = null;
-        
-        if (!this.intentionalClose && !this.isCleanedUp) {
-          this.handleReconnect();
-        }
+      this.ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        this.isConnecting = false;
+        this.cleanup(false);
         this.triggerEvent('disconnect');
+
+        // Attempt reconnect if we haven't exceeded max attempts
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          console.log(`Attempting reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+          setTimeout(() => this.connect(), 1000 * Math.min(this.reconnectAttempts, 5));
+        }
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket connection error:', {
-          error,
-          readyState: this.ws?.readyState,
-          url: wsUrl.toString()
-        });
+        console.error('WebSocket error:', error);
+        this.isConnecting = false;
         this.triggerEvent('error', { error });
       };
 
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('Received WebSocket message:', data);
           this.triggerEvent('message', data);
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          console.error('Error parsing message:', error);
         }
       };
     } catch (error) {
-      console.error('Error creating WebSocket connection:', error);
-      if (!this.isCleanedUp) {
-        this.handleReconnect();
-      }
+      console.error('Connection error:', error);
+      this.isConnecting = false;
+      this.triggerEvent('error', { error });
     }
   }
 
-  private handleReconnect() {
-    if (this.isCleanedUp || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Not attempting reconnect:', {
-        isCleanedUp: this.isCleanedUp,
-        reconnectAttempts: this.reconnectAttempts,
-        maxReconnectAttempts: this.maxReconnectAttempts
-      });
-      return;
-    }
-
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    console.log('Scheduling reconnect:', {
-      attempt: this.reconnectAttempts + 1,
-      maxAttempts: this.maxReconnectAttempts,
-      delay
-    });
-
-    this.reconnectTimeout = setTimeout(() => {
-      this.reconnectAttempts++;
-      console.log('Attempting reconnect:', {
-        attempt: this.reconnectAttempts,
-        maxAttempts: this.maxReconnectAttempts
-      });
-      this.connect();
-    }, delay);
-  }
-
-  cleanup() {
-    console.log('Cleaning up WebSocket');
-    this.isCleanedUp = true;
-    this.intentionalClose = true;
-    
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
+  cleanup(resetConfig: boolean = true) {
+    this.isConnecting = false;
     
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close();
+    if (this.ws) {
+      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+        this.ws.close();
+      }
+      this.ws = null;
     }
-    
-    this.ws = null;
-    this.config = null;
-    this.eventHandlers = {};
+
+    if (resetConfig) {
+      this.config = null;
+      this.eventHandlers = {};
+      this.reconnectAttempts = 0;
+    }
   }
 
-  public on(event: string, handler: EventHandler | MessageHandler): void {
+  public on(event: string, handler: Function): void {
     if (!this.eventHandlers[event]) {
       this.eventHandlers[event] = new Set();
     }
     this.eventHandlers[event].add(handler);
   }
 
-  public off(event: string, handler: EventHandler | MessageHandler): void {
-    this.eventHandlers[event].delete(handler);
-    if (this.eventHandlers[event].size === 0) {
-      delete this.eventHandlers[event];
+  public off(event: string, handler: Function): void {
+    if (this.eventHandlers[event]) {
+      this.eventHandlers[event].delete(handler);
     }
   }
 
-  private triggerEvent(event: string, data?: Record<string, unknown>): void {
-    // Don't trigger events if cleaned up
-    if (this.isCleanedUp) {
-      console.log('Not triggering event after cleanup:', event);
-      return;
-    }
-
+  private triggerEvent(event: string, data?: any): void {
     const handlers = this.eventHandlers[event];
     if (!handlers) return;
 
-    // Convert handlers to array to avoid iterator issues
-    const handlersArray = Array.from(handlers);
-    
-    handlersArray.forEach(handler => {
-      // Wrap each handler execution in a try-catch
-      window.setTimeout(() => {
-        try {
-          if (data) {
-            (handler as MessageHandler)(data);
-          } else {
-            (handler as EventHandler)();
-          }
-        } catch (error) {
-          console.error(`Error in ${event} handler:`, error);
-          // Log but don't rethrow
+    handlers.forEach(handler => {
+      try {
+        if (data) {
+          handler(data);
+        } else {
+          handler();
         }
-      }, 0);
+      } catch (error) {
+        console.error(`Error in handler:`, error);
+      }
     });
   }
 
-  public sendMessage(message: Record<string, unknown>): void {
+  public sendMessage(message: { type: string; payload: any }): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.config) {
-      console.error('Cannot send message:', {
-        noWebSocket: !this.ws,
-        notOpen: this.ws?.readyState !== WebSocket.OPEN,
-        noConfig: !this.config,
-        readyState: this.ws?.readyState
-      });
+      console.error('Cannot send message - not connected');
       return;
     }
 
     try {
-      // Validate message format
-      if (!message.type || typeof message.type !== 'string') {
-        throw new Error('Message must have a type property of type string');
-      }
-
-      // Ensure payload exists
-      const payload = message.payload ?? {};
-      if (typeof payload !== 'object' || payload === null) {
-        throw new Error('Message payload must be an object');
-      }
-
-      // Format message according to server expectations
-      const formattedMessage = {
-        type: message.type,
-        payload: {
-          ...payload,
-          playerId: this.config.playerId,
-          tableId: this.config.tableId,
-          timestamp: new Date().toISOString()
-        }
-      };
-
-      console.log('Sending message:', formattedMessage);
-      this.ws.send(JSON.stringify(formattedMessage));
+      this.ws.send(JSON.stringify(message));
     } catch (error) {
       console.error('Error sending message:', error);
-      this.triggerEvent('error', { error });
     }
   }
 }
 
-// Create a singleton instance
 const pokerWebSocket = new PokerWebSocket();
 export default pokerWebSocket; 

@@ -343,18 +343,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
       isInitializedRef.current = true;
       initialPlayerRef.current = initialPlayer;
       console.log('Initializing player state with:', initialPlayer);
-      return [{
-        ...initialPlayer,
-        // Use temporary position 0 until server assigns one
-        position: 0 as TablePosition,
-        isActive: true,
-        isCurrent: false,
-        isDealer: false,
-        currentBet: 0,
-        avatarUrl: AVATAR_URLS[0],
-        cards: [],
-        isConnected: true
-      }];
+      return []; // Let server assign positions
     }
     return [];
   });
@@ -366,17 +355,8 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
       playerInitializedRef.current = true;
       initialPlayerRef.current = initialPlayer;
       
-      setPlayersState([{
-        ...initialPlayer,
-        position: 1 as TablePosition,
-        isActive: true,
-        isCurrent: false,
-        isDealer: false,
-        currentBet: 0,
-        avatarUrl: AVATAR_URLS[0],
-        cards: [],
-        isConnected: true
-      }]);
+      // Don't set initial position, let server assign it
+      setPlayersState([]);
     }
   }, [initialPlayer]);
 
@@ -479,34 +459,27 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
       
       // Update players with positions from server
       setPlayersState(prev => {
-        const updatedPlayers = gameState.players.map((p: any) => {
-          const player = {
-            id: p.id,
-            name: p.name,
-            chips: p.chips,
-            position: p.position,
-            isActive: p.isActive ?? true,
-            isCurrent: p.isCurrent ?? false,
-            isDealer: p.isDealer ?? false,
-            currentBet: p.currentBet || 0,
-            cards: p.cards || [],
-            avatarUrl: p.position ? AVATAR_URLS[(p.position - 1) % AVATAR_URLS.length] : undefined
-          };
-          
-          if (p.position) {
-            console.log(`Server assigned position ${p.position} to player ${p.name}`);
-          }
-          return player;
-        });
+        const updatedPlayers = gameState.players.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          chips: p.chips,
+          position: p.position,
+          isActive: p.isActive ?? true,
+          isCurrent: p.isCurrent ?? false,
+          isDealer: p.isDealer ?? false,
+          currentBet: p.currentBet || 0,
+          cards: p.cards || [],
+          avatarUrl: p.position ? AVATAR_URLS[(p.position - 1) % AVATAR_URLS.length] : undefined,
+          isConnected: true
+        }));
+
+        if (gameState.status === 'playing') {
+          setIsStarted(true);
+        }
 
         console.log('Updated players with server positions:', updatedPlayers);
         return updatedPlayers;
       });
-
-      // Update tournament state
-      if (gameState.status === 'playing') {
-        setIsStarted(true);
-      }
     } else if (data.type === 'playerJoined') {
       // Log when a new player joins
       const joinedPlayer = data.payload.player;
@@ -541,10 +514,9 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
       return;
     }
 
-    // Don't initialize if we don't have a player or if already connected
-    if (!initialPlayer || connectionRef.current.isInitialized) {
-      console.log('Skipping WebSocket initialization:', 
-        !initialPlayer ? 'no player' : 'already initialized');
+    // Don't initialize if we don't have a player
+    if (!initialPlayer) {
+      console.log('Skipping WebSocket initialization: no player');
       return;
     }
 
@@ -582,52 +554,46 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
     };
 
     // Initialize WebSocket connection
-    console.log('Creating WebSocket connection:', {
-      tableId: actualTableId,
-      playerId: initialPlayer.id
-    });
-    
     ws.connect(actualTableId, initialPlayer.id, {
       name: initialPlayer.name,
       chips: initialPlayer.chips || 1000
     });
 
+    // Set up event handlers
     ws.on('connect', handleConnect);
     ws.on('disconnect', handleDisconnect);
     ws.on('error', handleError);
     ws.on('message', handleMessage);
 
-    // Store WebSocket instance and mark as initialized
-    connectionRef.current.ws = ws;
+    // Store connection state
     connectionRef.current.isInitialized = true;
     connectionRef.current.isConnecting = true;
-    connectionRef.current.shouldCleanup = false;
 
     // Cleanup function
     return () => {
-      // Only cleanup if component is truly unmounting and not Fast Refreshing
-      if (!connectionRef.current.shouldCleanup || isFastRefreshRef.current) {
-        console.log('Skipping cleanup due to Fast Refresh or not ready for cleanup');
+      // Skip cleanup if component is not truly unmounting
+      if (isFastRefreshRef.current) {
+        console.log('Skipping cleanup due to Fast Refresh');
         return;
       }
-      
+
       console.log('Cleaning up WebSocket connection:', {
         player: initialPlayer.id,
         table: actualTableId
       });
-      
-      const ws = connectionRef.current.ws;
-      if (ws) {
-        ws.off('connect', handleConnect);
-        ws.off('disconnect', handleDisconnect);
-        ws.off('error', handleError);
-        ws.off('message', handleMessage);
-        ws.cleanup();
+
+      ws.off('connect', handleConnect);
+      ws.off('disconnect', handleDisconnect);
+      ws.off('error', handleError);
+      ws.off('message', handleMessage);
+
+      // Only disconnect if we're truly unmounting
+      if (!isFastRefreshRef.current) {
+        ws.disconnect();
       }
-      
+
       connectionRef.current.isInitialized = false;
       connectionRef.current.isConnecting = false;
-      connectionRef.current.ws = null;
     };
   }, [actualTableId, initialPlayer, ws, handleMessage]);
 

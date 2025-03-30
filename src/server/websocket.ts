@@ -129,26 +129,24 @@ const wss = new WebSocketServer({
 
 // Helper function to find the next available position
 function findNextPosition(players: Player[]): TablePosition | null {
-  const takenPositions = new Set(players.map((p: Player) => p.position ?? 0));
-  console.log('Current taken positions:', Array.from(takenPositions));
-  
-  // Filter out invalid positions
-  const validPositions = new Set(
-    Array.from(takenPositions)
-      .filter((pos): pos is TablePosition => 
-        typeof pos === 'number' && pos >= 1 && pos <= MAX_PLAYERS_PER_TABLE
-      )
+  // Get all currently occupied positions
+  const occupiedPositions = new Set(
+    players
+      .filter(p => p.position !== undefined && p.position >= 1 && p.position <= MAX_PLAYERS_PER_TABLE)
+      .map(p => p.position as TablePosition)
   );
-  console.log('Valid taken positions:', Array.from(validPositions));
-  
-  // Find the first available position
+
+  console.log('Currently occupied positions:', Array.from(occupiedPositions));
+
+  // Find the first available position from 1 to MAX_PLAYERS_PER_TABLE
   for (let i = 1; i <= MAX_PLAYERS_PER_TABLE; i++) {
     const position = i as TablePosition;
-    if (!validPositions.has(position)) {
-      console.log(`Assigning position ${position} to new player`);
+    if (!occupiedPositions.has(position)) {
+      console.log(`Found available position ${position}`);
       return position;
     }
   }
+
   console.log('No available positions found');
   return null;
 }
@@ -540,6 +538,45 @@ interface TableState {
 // Initialize test tournament data
 syncTestTournament().catch(console.error);
 
+// Handle server shutdown gracefully
+let isShuttingDown = false;
+
+async function shutdown() {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log('Shutting down server...');
+
+  // Close all client connections
+  wss.clients.forEach((client) => {
+    try {
+      client.close();
+    } catch (error) {
+      console.error('Error closing client connection:', error);
+    }
+  });
+
+  // Close the WebSocket server
+  wss.close(() => {
+    console.log('WebSocket server closed');
+    
+    // Close the HTTP server
+    httpServer.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+  });
+
+  // Force exit after 5 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.log('Forcing shutdown after timeout');
+    process.exit(1);
+  }, 5000);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
 // Start the server
 const port = process.env.WS_PORT || 3001;
 httpServer.listen(port, () => {
@@ -548,39 +585,20 @@ httpServer.listen(port, () => {
   console.log(`Server URL: ws://localhost:${port}`);
 });
 
-// Add server-level error handling
-wss.on('error', (error) => {
-  console.error('WebSocket server error:', error);
-});
-
-wss.on('close', () => {
-  console.log('WebSocket server closed');
-});
-
 // Log server stats periodically
-setInterval(() => {
-  console.log('Server stats:', {
-    clients: wss.clients.size,
-    tables: connections.size,
-    games: gameStates.size
-  });
+const statsInterval = setInterval(() => {
+  if (!isShuttingDown) {
+    console.log('Server stats:', {
+      clients: wss.clients.size,
+      tables: connections.size,
+      games: gameStates.size
+    });
+  }
 }, 30000);
 
-// Handle server shutdown gracefully
-process.on('SIGTERM', () => {
-  console.log('Received SIGTERM, shutting down gracefully');
-  wss.close(() => {
-    console.log('WebSocket server closed');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('Received SIGINT, shutting down gracefully');
-  wss.close(() => {
-    console.log('WebSocket server closed');
-    process.exit(0);
-  });
+// Clean up interval on shutdown
+process.on('exit', () => {
+  clearInterval(statsInterval);
 });
 
 // Heartbeat check interval
@@ -635,8 +653,12 @@ wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
   const existingPlayer = gameState.players.find(p => p.id === playerId);
   if (!existingPlayer && playerData) {
     console.log('Adding new player to game state:', { playerId, playerData });
+    
+    // Find next available position
     const position = findNextPosition(gameState.players);
     if (position) {
+      console.log(`Assigning position ${position} to player ${playerId}`);
+      
       const newPlayer = {
         id: playerId,
         name: playerData.name,
@@ -650,13 +672,40 @@ wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
         totalBetThisRound: 0,
         hasActed: false
       };
+      
       gameState.players.push(newPlayer);
-      console.log('Assigned position to player:', { playerId, position });
+      
+      // Broadcast player joined message
+      broadcastToTable(tableId, {
+        type: 'playerJoined',
+        payload: {
+          player: newPlayer
+        }
+      });
+
+      // Broadcast updated game state immediately after adding player
+      broadcastToTable(tableId, {
+        type: 'gameState',
+        payload: gameState
+      });
     } else {
       console.log('No available positions for player:', playerId);
       ws.close(1000, 'Table is full');
       return;
     }
+  } else if (existingPlayer) {
+    // Update existing player's connection status
+    existingPlayer.isActive = true;
+    existingPlayer.folded = false;
+    
+    // Keep the existing position
+    console.log(`Reconnected player ${playerId} at position ${existingPlayer.position}`);
+    
+    // Broadcast updated game state for reconnection
+    broadcastToTable(tableId, {
+      type: 'gameState',
+      payload: gameState
+    });
   }
 
   // Store or update game state
@@ -667,10 +716,16 @@ wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
     connections.set(tableId, new Map());
   }
   connections.get(tableId)?.set(playerId, ws);
-  console.log('Current connections for table:', {
+  
+  // Log current table state
+  console.log('Current table state:', {
     tableId,
-    playerCount: connections.get(tableId)?.size || 0,
-    players: Array.from(connections.get(tableId)?.keys() || [])
+    playerCount: gameState.players.length,
+    players: gameState.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      position: p.position
+    }))
   });
 
   // Broadcast updated game state
@@ -726,6 +781,8 @@ wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
 
   // Handle disconnection
   ws.on('close', () => {
+    console.log(`Client disconnected: { tableId: '${tableId}', playerId: '${playerId}' }`);
+    
     const table = connections.get(tableId);
     if (table) {
       table.delete(playerId);
@@ -740,10 +797,15 @@ wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
           if (player) {
             player.isActive = false;
             player.folded = true;
+            
+            // Broadcast updated game state
+            broadcastToTable(tableId, {
+              type: 'gameState',
+              payload: gameState
+            });
           }
         }
       }
-      console.log(`Player ${playerId} disconnected from table ${tableId}`);
       
       // Broadcast player left message
       broadcastToTable(tableId, {

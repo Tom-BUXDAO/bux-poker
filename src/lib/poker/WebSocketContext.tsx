@@ -17,215 +17,146 @@ const WebSocketContext = createContext<WebSocketContextType | null>(null);
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<typeof pokerWebSocket>(pokerWebSocket);
+  const handlersRef = useRef(new Map<string, Set<(data?: any) => void>>());
   const connectionRef = useRef({
-    isInitialized: false,
     tableId: '',
     playerId: '',
-    handlers: new Map<string, Set<(data?: any) => void>>()
+    playerData: null as { name: string; chips: number } | null
   });
-
-  // Set up connection event handlers
-  const setupEventHandlers = () => {
-    function handleConnect() {
-      console.log('WebSocket connected (context)');
-      setIsConnected(true);
-    }
-
-    function handleDisconnect() {
-      console.log('WebSocket disconnected (context)');
-      setIsConnected(false);
-    }
-
-    function handleError(error: any) {
-      console.error('WebSocket error (context):', error);
-      setIsConnected(false);
-    }
-
-    try {
-      // Set up event handlers
-      wsRef.current.on('connect', handleConnect);
-      wsRef.current.on('disconnect', handleDisconnect);
-      wsRef.current.on('error', handleError);
-
-      // Store handlers for cleanup
-      const handlers = connectionRef.current.handlers;
-      handlers.set('connect', new Set([handleConnect]));
-      handlers.set('disconnect', new Set([handleDisconnect]));
-      handlers.set('error', new Set([handleError]));
-
-      // Check initial connection state
-      if ((wsRef.current as any).ws?.readyState === WebSocket.OPEN) {
-        console.log('Initial connection state: connected');
-        setIsConnected(true);
-      } else {
-        console.log('Initial connection state: disconnected');
-        setIsConnected(false);
-      }
-    } catch (error) {
-      console.error('Error setting up WebSocket event handlers:', error);
-    }
-  };
-
-  const cleanupEventHandlers = () => {
-    try {
-      const handlers = connectionRef.current.handlers;
-      if (handlers.size > 0) {
-        console.log('Cleaning up event handlers');
-        handlers.forEach((eventHandlers, event) => {
-          if (eventHandlers.size > 0) {
-            eventHandlers.forEach(handler => {
-              try {
-                wsRef.current.off(event, handler);
-              } catch (error) {
-                console.error(`Error removing handler for event ${event}:`, error);
-              }
-            });
-          }
-        });
-        handlers.clear();
-      }
-    } catch (error) {
-      console.error('Error during event handler cleanup:', error);
-    }
-  };
 
   const connect = (tableId: string, playerId: string, playerData: { name: string; chips: number }) => {
     try {
-      // Don't reconnect if already connected to the same table/player
-      if (connectionRef.current.isInitialized && 
-          connectionRef.current.tableId === tableId && 
-          connectionRef.current.playerId === playerId &&
-          isConnected) {
-        console.log('Already connected, skipping reconnect');
-        return;
-      }
-
-      // Clean up existing connection if any
-      if (connectionRef.current.isInitialized) {
-        console.log('Cleaning up existing connection');
-        cleanupEventHandlers();
-        wsRef.current.cleanup();
-        setIsConnected(false);
-      }
-
-      console.log('Initializing WebSocket connection:', {
+      console.log('WebSocket context: connecting with', { tableId, playerId, playerData });
+      
+      // Store connection info
+      connectionRef.current = {
         tableId,
         playerId,
         playerData
-      });
+      };
 
-      // Initialize new connection
+      // Initialize WebSocket connection
       wsRef.current.init({
         tableId,
         playerId,
         playerData
       });
-
-      // Set up event handlers after initializing connection
-      setupEventHandlers();
-
-      connectionRef.current = {
-        isInitialized: true,
-        tableId,
-        playerId,
-        handlers: connectionRef.current.handlers
-      };
     } catch (error) {
-      console.error('Error connecting to WebSocket:', error);
+      console.error('Error in WebSocket context connect:', error);
       setIsConnected(false);
     }
   };
 
   const disconnect = () => {
     try {
-      console.log('Disconnecting WebSocket');
-      cleanupEventHandlers();
+      console.log('WebSocket context: disconnecting');
       wsRef.current.cleanup();
+      setIsConnected(false);
       connectionRef.current = {
-        isInitialized: false,
         tableId: '',
         playerId: '',
-        handlers: new Map()
+        playerData: null
       };
-      setIsConnected(false);
     } catch (error) {
-      console.error('Error disconnecting WebSocket:', error);
-      setIsConnected(false);
+      console.error('Error in WebSocket context disconnect:', error);
     }
   };
 
   const sendMessage = (message: { type: string; payload: any }) => {
     try {
-      if (connectionRef.current.isInitialized && isConnected) {
-        wsRef.current.sendMessage(message);
-      } else {
-        console.warn('Cannot send message: WebSocket is not connected', {
-          isInitialized: connectionRef.current.isInitialized,
-          isConnected,
-          readyState: (wsRef.current as any)?.ws?.readyState
-        });
+      if (!isConnected) {
+        console.log('Cannot send message: WebSocket is not connected');
+        return;
       }
+
+      const formattedMessage = {
+        type: message.type,
+        payload: {
+          ...message.payload,
+          playerId: connectionRef.current.playerId,
+          tableId: connectionRef.current.tableId,
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      wsRef.current.sendMessage(formattedMessage);
     } catch (error) {
-      console.error('Error sending WebSocket message:', error);
+      console.error('Error in WebSocket context sendMessage:', error);
     }
   };
 
   const on = (event: string, handler: (data?: any) => void) => {
     try {
-      if (!connectionRef.current.isInitialized) {
-        console.warn('Cannot add event handler: WebSocket is not initialized');
-        return;
+      if (!handlersRef.current.has(event)) {
+        handlersRef.current.set(event, new Set());
       }
-
-      // Store handler in our ref for cleanup
-      if (!connectionRef.current.handlers.has(event)) {
-        connectionRef.current.handlers.set(event, new Set());
-      }
-      connectionRef.current.handlers.get(event)?.add(handler);
-
+      handlersRef.current.get(event)?.add(handler);
       wsRef.current.on(event, handler);
     } catch (error) {
-      console.error('Error adding WebSocket event handler:', error);
+      console.error('Error in WebSocket context on:', error);
     }
   };
 
   const off = (event: string, handler: (data?: any) => void) => {
     try {
-      if (!connectionRef.current.isInitialized) return;
-
-      const handlers = connectionRef.current.handlers.get(event);
+      const handlers = handlersRef.current.get(event);
       if (handlers?.has(handler)) {
         handlers.delete(handler);
         wsRef.current.off(event, handler);
       }
     } catch (error) {
-      console.error('Error removing WebSocket event handler:', error);
+      console.error('Error in WebSocket context off:', error);
     }
   };
 
-  // Cleanup on unmount
+  // Set up core event handlers
   useEffect(() => {
+    const handleConnect = () => {
+      console.log('WebSocket connected (context)');
+      setIsConnected(true);
+    };
+
+    const handleDisconnect = () => {
+      console.log('WebSocket disconnected (context)');
+      setIsConnected(false);
+    };
+
+    const handleError = (error: any) => {
+      console.error('WebSocket error (context):', error);
+      setIsConnected(false);
+    };
+
+    wsRef.current.on('connect', handleConnect);
+    wsRef.current.on('disconnect', handleDisconnect);
+    wsRef.current.on('error', handleError);
+
+    // Clean up event handlers on unmount
     return () => {
-      try {
-        console.log('WebSocket provider unmounting');
-        if (connectionRef.current.isInitialized) {
-          disconnect();
-        }
-      } catch (error) {
-        console.error('Error during WebSocket provider cleanup:', error);
-      }
+      wsRef.current.off('connect', handleConnect);
+      wsRef.current.off('disconnect', handleDisconnect);
+      wsRef.current.off('error', handleError);
     };
   }, []);
 
+  // Handle cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log('WebSocket context: cleaning up on unmount');
+      disconnect();
+    };
+  }, []);
+
+  const value = {
+    isConnected,
+    connect,
+    disconnect,
+    sendMessage,
+    on,
+    off
+  };
+
   return (
-    <WebSocketContext.Provider value={{ 
-      isConnected, 
-      connect, 
-      disconnect, 
-      sendMessage, 
-      on, 
-      off 
-    }}>
+    <WebSocketContext.Provider value={value}>
       {children}
     </WebSocketContext.Provider>
   );
