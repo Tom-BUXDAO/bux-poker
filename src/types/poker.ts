@@ -5,20 +5,20 @@ export interface Card {
 
 export interface Player {
   id: string;
-  position: TablePosition;
+  name: string;
   chips: number;
+  position?: TablePosition;
   isActive: boolean;
   isCurrent: boolean;
-  name: string;
-  cards?: Card[];
   isDealer?: boolean;
   currentBet: number;
-  disconnectedAt?: number;
+  cards: Card[];
   avatarUrl?: string;
-  hasActed?: boolean;
-  totalBetThisRound?: number;
-  handResult?: HandResult;
+  isConnected?: boolean;
   folded: boolean;
+  totalBetThisRound: number;
+  hasActed: boolean;
+  handResult?: HandResult;
 }
 
 export const PLAYER_ACTIONS = ['fold', 'check', 'call', 'raise', 'all-in'] as const;
@@ -61,16 +61,19 @@ export interface HandResult {
 
 export interface GameState {
   players: Player[];
-  communityCards: Card[];
-  pot: number;
-  currentBet: number;
-  currentPosition: number;
-  dealerPosition?: number;
-  smallBlind: number;
-  bigBlind: number;
   status: 'waiting' | 'playing' | 'finished';
   phase: GamePhase;
   deck?: Card[];
+  pot: number;
+  communityCards: Card[];
+  currentPosition: number;
+  currentBet: number;
+  smallBlind: number;
+  bigBlind: number;
+  minRaise: number;
+  lastRaise: number;
+  dealerPosition?: number;
+  roundComplete: boolean;
   lastAction?: {
     playerId: string;
     type: PlayerAction;
@@ -81,15 +84,16 @@ export interface GameState {
     amount: number;
     eligiblePlayers: string[];
   }[];
-  roundComplete: boolean;
-  minRaise: number;
-  lastRaise: number;
 }
 
 export interface ChatMessage {
   playerId: string;
   message: string;
   timestamp: Date;
+}
+
+export interface StringMessage {
+  content: string;
 }
 
 export interface ActionValidation {
@@ -105,7 +109,13 @@ export interface BettingRound {
   complete: boolean;
 }
 
+export interface PlayerLeftMessage {
+  playerId: string;
+}
+
+export type WebSocketPayload = GameState | Player | Error | ChatMessage | StringMessage | PlayerLeftMessage | Record<string, unknown>;
+
 export interface WebSocketMessage {
-  type: string;
-  payload: Record<string, unknown>;
-} 
+  type: 'gameState' | 'playerJoined' | 'playerLeft' | 'error' | 'chat' | 'ping' | 'playerAction' | 'startGame';
+  payload: WebSocketPayload;
+}

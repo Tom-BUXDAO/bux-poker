@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,105 +8,109 @@ datasource db {
 }
 
 model Player {
-  id               String                 @id @default(cuid())
-  discordId        String                @unique
-  discordUsername  String
-  avatarUrl        String?
-  createdAt        DateTime              @default(now())
-  registrations    TournamentPlayer[]
-  gameStates       PlayerGameState[]
-  updatedAt        DateTime              @updatedAt
+  id              String             @id @default(cuid())
+  discordId       String             @unique
+  discordUsername String
+  avatarUrl       String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  gameStates      PlayerGameState[]  @relation("PlayerToGameState")
+  registrations   TournamentPlayer[]
 
   @@map("players")
 }
 
 model Tournament {
-  id              String             @id @default(cuid())
-  name            String
-  status          TournamentStatus   @default(REGISTERING)
-  maxPlayers      Int
-  startTime       DateTime?
-  createdById     String
-  createdAt       DateTime           @default(now())
-  players         TournamentPlayer[]
-  tables          GameTable[]
-  updatedAt       DateTime           @updatedAt
+  id          String             @id
+  name        String
+  status      TournamentStatus
+  maxPlayers  Int
+  startTime   DateTime
+  endTime     DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  createdById String
+  tables      Table[]
+  players     TournamentPlayer[]
 
   @@map("tournaments")
 }
 
 model TournamentPlayer {
-  id            String     @id @default(cuid())
-  tournamentId  String
-  playerId      String
-  registeredAt  DateTime   @default(now())
-  tournament    Tournament @relation(fields: [tournamentId], references: [id])
-  player        Player     @relation(fields: [playerId], references: [id])
+  id           String     @id @default(cuid())
+  tournamentId String
+  playerId     String
+  registeredAt DateTime   @default(now())
+  player       Player     @relation(fields: [playerId], references: [id])
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
 
   @@unique([tournamentId, playerId])
   @@map("tournament_players")
 }
 
-model GameTable {
-  id            String            @id @default(cuid())
+model Table {
+  id            String            @id
   tournamentId  String
-  status        TableStatus       @default(WAITING)
-  currentRound  Int              @default(1)
+  status        TableStatus
   smallBlind    Int
   bigBlind      Int
-  tournament    Tournament        @relation(fields: [tournamentId], references: [id])
-  gameState     GameState?
-  playerStates  PlayerGameState[]
+  currentRound  Int
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  tournament    Tournament       @relation(fields: [tournamentId], references: [id])
+  gameState     GameState?
+  playerStates  PlayerGameState[]
 
-  @@map("game_tables")
+  @@index([tournamentId])
+  @@map("tables")
 }
 
 model GameState {
-  id                String    @id @default(cuid())
-  tableId          String    @unique
-  currentHand      Json      // Stores current game state
-  deck             Json      // Stores shuffled deck
-  pot              Int       @default(0)
-  communityCards   Json?     // Stores community cards
-  currentPosition  Int?      // Current player's position
-  table           GameTable  @relation(fields: [tableId], references: [id])
-  lastAction      DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id             String   @id @default(cuid())
+  tableId        String   @unique
+  currentHand    Json?
+  deck           Json?
+  pot            Int      @default(0)
+  communityCards Json?
+  currentPosition Int?
+  table          Table    @relation(fields: [tableId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
+  @@index([tableId])
   @@map("game_states")
 }
 
 model PlayerGameState {
-  id              String    @id @default(cuid())
-  tableId         String
-  playerId        String
-  chips           Int
-  position        Int
-  cards           Json?     // Player's hole cards
-  isActive        Boolean   @default(true)
-  lastAction      String?
-  lastActionTime  DateTime?
-  table          GameTable  @relation(fields: [tableId], references: [id])
-  player         Player     @relation(fields: [playerId], references: [id])
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  id            String   @id @default(cuid())
+  tableId       String
+  playerId      String
+  position      Int
+  chips         Int     @default(1000)
+  cards         Json?
+  isActive      Boolean @default(true)
+  lastAction    String?
+  lastActionTime DateTime?
+  table         Table    @relation(fields: [tableId], references: [id])
+  player        Player   @relation("PlayerToGameState", fields: [playerId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  @@unique([tableId, position])
   @@unique([tableId, playerId])
+  @@index([tableId])
+  @@index([playerId])
   @@map("player_game_states")
 }
 
 enum TournamentStatus {
-  REGISTERING
+  SCHEDULED
   IN_PROGRESS
   COMPLETED
   CANCELLED
 }
 
 enum TableStatus {
-  WAITING
   ACTIVE
+  INACTIVE
   COMPLETED
 }

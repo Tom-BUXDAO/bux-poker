@@ -17,11 +17,16 @@ import {
   moveToNextPhase,
   findNextActivePlayer
 } from '@/lib/poker/game-logic';
-import type { WebSocketMessage } from '@/types/poker';
+import type { WebSocketMessage, WebSocketPayload } from '@/types/poker';
+import { syncTestTournament, syncGameState, syncPlayerState } from '@/lib/tournament/db-sync';
+import { IncomingMessage, ServerResponse } from 'http';
+import { TournamentStatus, TableStatus } from '@prisma/client';
 
 // Extend WebSocket type to include isAlive
 interface ExtendedWebSocket extends WebSocket {
   isAlive: boolean;
+  tableId?: string;
+  playerId?: string;
 }
 
 // Store the game state
@@ -36,21 +41,115 @@ const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const HEARTBEAT_TIMEOUT = 35000; // 35 seconds
 const ACTION_TIMEOUT = 30000; // 30 seconds
 
-// Create HTTP server
-const httpServer = createServer();
+// Create HTTP server with request handler
+const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+  console.log('Received HTTP request:', req.method, req.url);
+  console.log('Headers:', req.headers);
+  
+  // Add CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Upgrade, Connection');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-// Create WebSocket server
-const wss = new WebSocketServer({ server: httpServer });
+  // Handle OPTIONS requests for CORS
+  if (req.method === 'OPTIONS') {
+    console.log('Handling CORS preflight request');
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  // Handle WebSocket upgrade requests
+  if (req.headers.upgrade?.toLowerCase() === 'websocket') {
+    console.log('WebSocket upgrade request received');
+    console.log('Upgrade headers:', {
+      upgrade: req.headers.upgrade,
+      connection: req.headers.connection,
+      'sec-websocket-key': req.headers['sec-websocket-key']
+    });
+    return;
+  }
+
+  // Health check endpoint
+  if (req.url === '/health') {
+    console.log('Health check request');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      status: 'ok',
+      connections: wss.clients.size,
+      uptime: process.uptime()
+    }));
+    return;
+  }
+
+  // Handle all other requests
+  console.log('Unknown request type');
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+// Create WebSocket server with more robust configuration
+const wss = new WebSocketServer({ 
+  server: httpServer,
+  clientTracking: true,
+  perMessageDeflate: false, // Disable per-message deflate to reduce latency
+  verifyClient: async (info, callback) => {
+    console.log('Received connection request:', info.req.url);
+    const { url } = info.req;
+    if (!url) {
+      console.log('Rejected connection: Missing URL');
+      callback(false, 400, 'Missing URL');
+      return;
+    }
+
+    const { query } = parse(url, true);
+    console.log('Parsed query parameters:', query);
+    
+    try {
+      // Decode and validate parameters
+      const tableId = decodeURIComponent(query.tableId as string);
+      const playerId = decodeURIComponent(query.playerId as string);
+      const playerData = query.playerData ? JSON.parse(decodeURIComponent(query.playerData as string)) : undefined;
+
+      if (!tableId || !playerId) {
+        console.log('Rejected connection: Missing tableId or playerId', { tableId, playerId });
+        callback(false, 400, 'Missing tableId or playerId');
+        return;
+      }
+
+      console.log('Verified client connection:', { tableId, playerId, playerData });
+      callback(true);
+    } catch (error) {
+      console.error('Error parsing connection parameters:', error);
+      callback(false, 400, 'Invalid connection parameters');
+    }
+  }
+});
 
 // Helper function to find the next available position
 function findNextPosition(players: Player[]): TablePosition | null {
-  const takenPositions = new Set(players.map((p: Player) => p.position));
+  const takenPositions = new Set(players.map((p: Player) => p.position ?? 0));
+  console.log('Current taken positions:', Array.from(takenPositions));
+  
+  // Filter out invalid positions
+  const validPositions = new Set(
+    Array.from(takenPositions)
+      .filter((pos): pos is TablePosition => 
+        typeof pos === 'number' && pos >= 1 && pos <= MAX_PLAYERS_PER_TABLE
+      )
+  );
+  console.log('Valid taken positions:', Array.from(validPositions));
+  
+  // Find the first available position
   for (let i = 1; i <= MAX_PLAYERS_PER_TABLE; i++) {
     const position = i as TablePosition;
-    if (!takenPositions.has(position)) {
+    if (!validPositions.has(position)) {
+      console.log(`Assigning position ${position} to new player`);
       return position;
     }
   }
+  console.log('No available positions found');
   return null;
 }
 
@@ -73,11 +172,11 @@ function cleanupDisconnectedPlayer(tableId: string, playerId: string) {
   // Broadcast player left and updated game state
   broadcastToTable(tableId, {
     type: 'playerLeft',
-    payload: playerId,
+    payload: { playerId }
   });
   broadcastToTable(tableId, {
     type: 'gameState',
-    payload: gameState,
+    payload: gameState
   });
 }
 
@@ -118,7 +217,9 @@ function handleGameStart(tableId: string) {
   });
 
   // Get players in clockwise order
-  const orderedPlayers = [...activePlayers].sort((a, b) => a.position - b.position);
+  const orderedPlayers = [...activePlayers]
+    .filter(p => typeof p.position === 'number')
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const dealerIdx = orderedPlayers.findIndex(p => p.position === dealerPosition);
   
   // Announce dealer
@@ -180,8 +281,10 @@ function handleGameStart(tableId: string) {
   // First to act is UTG (next after BB)
   const firstToActIdx = (bbIdx + 1) % orderedPlayers.length;
   const firstToActPlayer = orderedPlayers[firstToActIdx];
-  gameState.currentPosition = firstToActPlayer.position;
-  firstToActPlayer.isCurrent = true;
+  if (firstToActPlayer.position) {
+    gameState.currentPosition = firstToActPlayer.position;
+    firstToActPlayer.isCurrent = true;
+  }
 
   // Broadcast game state
   broadcastToTable(tableId, {
@@ -363,16 +466,16 @@ function handlePlayerAction(tableId: string, payload: PlayerActionPayload) {
     console.log('Betting round complete, moving to next phase');
     moveToNextPhase(gameState);
     if (gameState.phase !== 'showdown') {
-      const nextPlayer = findNextActivePlayer(gameState, gameState.dealerPosition!);
-      if (nextPlayer) {
+      const nextPlayer = findNextActivePlayer(gameState, gameState.dealerPosition ?? 0);
+      if (nextPlayer?.position) {
         nextPlayer.isCurrent = true;
         gameState.currentPosition = nextPlayer.position;
       }
     }
   } else {
     console.log('Moving to next player');
-    const nextPlayer = findNextActivePlayer(gameState, player.position);
-    if (nextPlayer) {
+    const nextPlayer = findNextActivePlayer(gameState, player.position ?? 0);
+    if (nextPlayer?.position) {
       nextPlayer.isCurrent = true;
       gameState.currentPosition = nextPlayer.position;
     }
@@ -386,13 +489,33 @@ function handlePlayerAction(tableId: string, payload: PlayerActionPayload) {
 }
 
 // Helper function to broadcast to all connections at a table
-function broadcastToTable(tableId: string, message: any) {
-  const tableConnections = connections.get(tableId);
-  if (!tableConnections) return;
+async function broadcastToTable(tableId: string, message: WebSocketMessage) {
+  const table = connections.get(tableId);
+  if (!table) return;
 
+  // If this is a game state update, sync with database
+  if (message.type === 'gameState' && 'players' in message.payload) {
+    try {
+      const gameState = message.payload as GameState;
+      await syncGameState(tableId, gameState);
+      
+      // Sync each player's state
+      if (gameState.players) {
+        await Promise.all(
+          gameState.players.map(player => syncPlayerState(tableId, player))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to sync game state:', error);
+    }
+  }
+
+  // Send message to all connected clients
   const messageStr = JSON.stringify(message);
-  for (const connection of tableConnections.values()) {
-    connection.send(messageStr);
+  for (const [_, ws] of table.entries()) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(messageStr);
+    }
   }
 }
 
@@ -414,207 +537,219 @@ interface TableState {
   connections: Map<string, ClientConnection>;
 }
 
-// WebSocket connection handling
-wss.on('connection', (ws: ExtendedWebSocket, req: any) => {
-  const { query } = parse(req.url || '', true);
-  const { tableId, playerId } = query;
+// Initialize test tournament data
+syncTestTournament().catch(console.error);
 
-  if (typeof tableId !== 'string' || typeof playerId !== 'string') {
-    ws.close();
-    return;
-  }
+// Start the server
+const port = process.env.WS_PORT || 3001;
+httpServer.listen(port, () => {
+  console.log(`WebSocket server running on port ${port}`);
+  console.log('Ready to accept connections');
+  console.log(`Server URL: ws://localhost:${port}`);
+});
 
-  // Parse player data from query
-  let playerName = playerId;
-  let playerChips = 1000;
-  try {
-    const playerData = JSON.parse(decodeURIComponent(query.playerData as string));
-    if (playerData) {
-      playerName = playerData.name || playerId;
-      playerChips = playerData.chips || 1000;
+// Add server-level error handling
+wss.on('error', (error) => {
+  console.error('WebSocket server error:', error);
+});
+
+wss.on('close', () => {
+  console.log('WebSocket server closed');
+});
+
+// Log server stats periodically
+setInterval(() => {
+  console.log('Server stats:', {
+    clients: wss.clients.size,
+    tables: connections.size,
+    games: gameStates.size
+  });
+}, 30000);
+
+// Handle server shutdown gracefully
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, shutting down gracefully');
+  wss.close(() => {
+    console.log('WebSocket server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT, shutting down gracefully');
+  wss.close(() => {
+    console.log('WebSocket server closed');
+    process.exit(0);
+  });
+});
+
+// Heartbeat check interval
+setInterval(() => {
+  wss.clients.forEach((wsClient: WebSocket) => {
+    const ws = wsClient as ExtendedWebSocket;
+    if (!ws.isAlive) {
+      console.log('Client failed heartbeat check:', { tableId: ws.tableId, playerId: ws.playerId });
+      ws.terminate();
+      return;
     }
-  } catch (error) {
-    console.error('Error parsing player data:', error);
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, HEARTBEAT_INTERVAL);
+
+// Add connection event handler
+wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
+  console.log('New WebSocket connection attempt');
+  
+  // Parse connection parameters
+  const { query } = parse(req.url || '', true);
+  const tableId = decodeURIComponent(query.tableId as string);
+  const playerId = decodeURIComponent(query.playerId as string);
+  const playerData = query.playerData ? JSON.parse(decodeURIComponent(query.playerData as string)) : undefined;
+
+  console.log('Connection parameters:', { tableId, playerId, playerData });
+
+  // Initialize connection tracking
+  ws.isAlive = true;
+  ws.tableId = tableId;
+  ws.playerId = playerId;
+
+  // Get or create game state for this table
+  let gameState: GameState = gameStates.get(tableId) || {
+    players: [],
+    status: 'waiting',
+    phase: 'pre-flop',
+    pot: 0,
+    currentBet: 0,
+    communityCards: [],
+    smallBlind: 10,
+    bigBlind: 20,
+    minRaise: 20,
+    lastRaise: 0,
+    deck: [],
+    currentPosition: 1,
+    roundComplete: false
+  };
+
+  // Add player to game state if not already present
+  const existingPlayer = gameState.players.find(p => p.id === playerId);
+  if (!existingPlayer && playerData) {
+    console.log('Adding new player to game state:', { playerId, playerData });
+    const position = findNextPosition(gameState.players);
+    if (position) {
+      const newPlayer = {
+        id: playerId,
+        name: playerData.name,
+        chips: playerData.chips,
+        position,
+        isActive: true,
+        isCurrent: false,
+        currentBet: 0,
+        folded: false,
+        cards: [],
+        totalBetThisRound: 0,
+        hasActed: false
+      };
+      gameState.players.push(newPlayer);
+      console.log('Assigned position to player:', { playerId, position });
+    } else {
+      console.log('No available positions for player:', playerId);
+      ws.close(1000, 'Table is full');
+      return;
+    }
   }
 
-  // Clear any existing disconnection timer
-  const disconnectionTimer = disconnectionTimers.get(tableId)?.get(playerId);
-  if (disconnectionTimer) {
-    clearTimeout(disconnectionTimer);
-    disconnectionTimers.get(tableId)?.delete(playerId);
-  }
+  // Store or update game state
+  gameStates.set(tableId, gameState);
 
-  // Store connection
+  // Track connection
   if (!connections.has(tableId)) {
     connections.set(tableId, new Map());
   }
   connections.get(tableId)?.set(playerId, ws);
+  console.log('Current connections for table:', {
+    tableId,
+    playerCount: connections.get(tableId)?.size || 0,
+    players: Array.from(connections.get(tableId)?.keys() || [])
+  });
 
-  // Initialize game state if it doesn't exist
-  if (!gameStates.has(tableId)) {
-    gameStates.set(tableId, {
-      players: [],
-      communityCards: [],
-      pot: 0,
-      currentBet: 0,
-      currentPosition: 0,
-      smallBlind: 10,
-      bigBlind: 20,
-      status: 'waiting',
-      phase: 'pre-flop',
-      roundComplete: false,
-      minRaise: 20,
-      lastRaise: 0
-    });
-  }
+  // Broadcast updated game state
+  broadcastToTable(tableId, {
+    type: 'gameState',
+    payload: gameState as WebSocketPayload
+  });
 
-  const gameState = gameStates.get(tableId);
-  if (gameState) {
-    // Add player to the game or reactivate if they were disconnected
-    const existingPlayer = gameState.players.find((p: Player) => p.id === playerId);
-
-    if (existingPlayer) {
-      // Reactivate player
-      if (!existingPlayer.isActive) {
-        existingPlayer.isActive = true;
-        delete existingPlayer.disconnectedAt;
-        broadcastToTable(tableId, {
-          type: 'playerJoined',
-          payload: { id: playerId },
-        });
-      }
-    } else {
-      // Find next available position
-      const nextPosition = findNextPosition(gameState.players);
-      if (nextPosition === null) {
-        ws.close(1000, 'No positions available');
-        return;
-      }
-
-      // Add new player
-      const newPlayer: Player = {
-        id: playerId,
-        position: nextPosition,
-        chips: playerChips,
-        isActive: true,
-        isCurrent: false,
-        currentBet: 0,
-        name: playerName,
-        hasActed: false,
-        totalBetThisRound: 0,
-        folded: false
-      };
-      gameState.players.push(newPlayer);
-
-      broadcastToTable(tableId, {
-        type: 'playerJoined',
-        payload: { id: playerId },
-      });
-    }
-
-    // Send initial game state
-    ws.send(JSON.stringify({
-      type: 'gameState',
-      payload: gameState,
-    }));
-  }
+  // Handle pong messages
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   // Handle messages
-  ws.on('message', (data) => {
+  ws.on('message', async (data: string) => {
     try {
-      const message = JSON.parse(data.toString()) as WebSocketMessage;
-      console.log(`Received message from ${playerId}:`, message);
-      
-      switch (message.type) {
-        case 'startGame':
-          console.log(`Starting game for table ${tableId}`);
-          handleGameStart(tableId);
-          break;
-        case 'playerAction':
-          console.log(`Processing action for player ${playerId}:`, message.payload);
-          const actionPayload = {
-            ...message.payload,
-            playerId,
-            timestamp: new Date()
-          };
-          if (isValidPlayerAction(actionPayload)) {
-            handlePlayerAction(tableId, actionPayload);
-          } else {
-            console.error('Invalid player action:', actionPayload);
-          }
-          break;
-        case 'chat':
-          if (isValidChatMessage(message.payload)) {
-            broadcastToTable(tableId, message);
-          }
-          break;
+      const parsed = JSON.parse(data);
+      if (typeof parsed === 'object' && parsed !== null && 'type' in parsed && 'payload' in parsed) {
+        const message = parsed as WebSocketMessage;
+        
+        switch (message.type) {
+          case 'gameState':
+          case 'playerJoined':
+          case 'playerLeft':
+          case 'error':
+          case 'chat':
+            await broadcastToTable(tableId, message);
+            break;
+          case 'ping':
+            // Handle ping message - just acknowledge receipt
+            break;
+          case 'playerAction':
+            // Handle player action
+            if (isValidPlayerAction(message.payload)) {
+              await handlePlayerAction(tableId, message.payload);
+            }
+            break;
+          case 'startGame':
+            handleGameStart(tableId);
+            break;
+          default:
+            console.warn('Unknown message type:', message.type);
+        }
       }
     } catch (error) {
-      console.error('Failed to parse message:', error);
+      console.error('Error handling message:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        payload: error instanceof Error ? error.message : 'Failed to process message'
+      }));
     }
   });
 
   // Handle disconnection
   ws.on('close', () => {
-    const gameState = gameStates.get(tableId);
-    if (!gameState) return;
-
-    const player = gameState.players.find((p: Player) => p.id === playerId);
-    if (!player) return;
-
-    // Mark player as inactive and set disconnection time
-    player.isActive = false;
-    player.disconnectedAt = Date.now();
-
-    // Set up disconnection timer
-    if (!disconnectionTimers.has(tableId)) {
-      disconnectionTimers.set(tableId, new Map());
+    const table = connections.get(tableId);
+    if (table) {
+      table.delete(playerId);
+      if (table.size === 0) {
+        connections.delete(tableId);
+        gameStates.delete(tableId);
+      } else {
+        // Update game state to mark player as inactive
+        const gameState = gameStates.get(tableId);
+        if (gameState) {
+          const player = gameState.players.find(p => p.id === playerId);
+          if (player) {
+            player.isActive = false;
+            player.folded = true;
+          }
+        }
+      }
+      console.log(`Player ${playerId} disconnected from table ${tableId}`);
+      
+      // Broadcast player left message
+      broadcastToTable(tableId, {
+        type: 'playerLeft',
+        payload: { playerId }
+      });
     }
-    disconnectionTimers.get(tableId)?.set(
-      playerId,
-      setTimeout(() => cleanupDisconnectedPlayer(tableId, playerId), DISCONNECTION_GRACE_PERIOD)
-    );
-
-    // If it was this player's turn, auto-fold
-    if (player.isCurrent) {
-      const foldAction: PlayerActionPayload = {
-        type: 'fold',
-        playerId,
-        timestamp: new Date()
-      };
-      handlePlayerAction(tableId, foldAction);
-    }
-
-    // Broadcast updated game state
-    broadcastToTable(tableId, {
-      type: 'gameState',
-      payload: gameState,
-    });
   });
 });
-
-function isValidChatMessage(payload: any): payload is ChatMessage {
-  // Convert ISO string timestamp to Date if needed
-  if (typeof payload.timestamp === 'string') {
-    try {
-      payload.timestamp = new Date(payload.timestamp);
-    } catch (error) {
-      console.error('Invalid timestamp:', error);
-      return false;
-    }
-  }
-
-  return (
-    typeof payload === 'object' &&
-    payload !== null &&
-    typeof payload.playerId === 'string' &&
-    typeof payload.message === 'string' &&
-    payload.timestamp instanceof Date
-  );
-}
-
-// Start the server
-const PORT = process.env.SOCKET_PORT || 3001;
-httpServer.listen(PORT, () => {
-  console.log(`WebSocket server running on port ${PORT}`);
-}); 

@@ -159,8 +159,11 @@ export function findNextActivePlayer(gameState: GameState, currentPosition: numb
   const activePlayers = gameState.players.filter(p => p.isActive);
   if (activePlayers.length === 0) return null;
 
-  // Get all positions in ascending order
-  const positions = [...new Set(activePlayers.map(p => p.position))].sort((a, b) => a - b) as TablePosition[];
+  // Get all positions in ascending order, filtering out undefined positions
+  const positions = [...new Set(activePlayers
+    .map(p => p.position)
+    .filter((pos): pos is TablePosition => typeof pos === 'number')
+  )].sort((a, b) => a - b);
   
   // Find the index of current position in our ordered positions
   const currentPosIndex = positions.indexOf(currentPosition as TablePosition);

@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Card, PlayerAction, Player, TablePosition, GameState } from '@/types/poker';
 import pokerWebSocket from '@/lib/poker/client-websocket';
 import ChipStack from './ChipStack';
 import PotDisplay from './PotDisplay';
 import Image from 'next/image';
+import Link from 'next/link';
+import { useWebSocket } from '@/lib/poker/WebSocketContext';
 
 const AVATAR_URLS = [
   'https://nftstorage.link/ipfs/bafybeigo7gili5wuojsywuwoift34g6mvvq56lrbk3ikp7r365a23es7je/4.png',
@@ -179,25 +181,242 @@ const pulsingBorder = `
 `;
 
 export default function PokerTable({ tableId, currentPlayer: initialPlayer, onConnectionChange }: PokerTableProps) {
-  const [isConnected, setIsConnected] = useState(false);
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
+  const ws = useWebSocket();
   const [players, setPlayers] = useState<Player[]>([]);
   const [communityCards, setCommunityCards] = useState<Card[]>([]);
   const [pot, setPot] = useState(0);
   const [currentBet, setCurrentBet] = useState(0);
   const [betAmount, setBetAmount] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isStarted, setIsStarted] = useState(false);
+  const minBet = 20;
+
+  // Add table ID validation with SSR support
+  const actualTableId = useMemo(() => {
+    // Check if we're on the client side
+    if (typeof window === 'undefined') {
+      return 'dev-tournament'; // Default value during SSR
+    }
+
+    // Extract the tournament ID from the URL on client side
+    const pathParts = window.location.pathname.split('/');
+    const tournamentId = pathParts[pathParts.indexOf('table') + 1];
+    return tournamentId || 'dev-tournament';
+  }, []);
+
+  // Initialize WebSocket connection and event handlers
+  useEffect(() => {
+    if (!initialPlayer || !actualTableId) return;
+
+    console.log('Connecting to WebSocket:', {
+      tableId: actualTableId,
+      playerId: initialPlayer.id
+    });
+
+    // Connect to WebSocket
+    ws.connect(actualTableId, initialPlayer.id, {
+      name: initialPlayer.name,
+      chips: initialPlayer.chips || 1000
+    });
+
+    // Set up event handlers
+    const handleGameState = (data: any) => {
+      if (!data || !data.type) return;
+      
+      if (data.type === 'gameState') {
+        const gameState = data.payload;
+        setPlayers(gameState.players || []);
+        setCommunityCards(gameState.communityCards || []);
+        setPot(gameState.pot || 0);
+        setCurrentBet(gameState.currentBet || 0);
+        if (gameState.status === 'playing') {
+          setIsStarted(true);
+        }
+      }
+    };
+
+    // Subscribe to events
+    ws.on('message', handleGameState);
+
+    // Cleanup function
+    return () => {
+      console.log('Cleaning up WebSocket connection');
+      ws.off('message', handleGameState);
+    };
+  }, [actualTableId, initialPlayer, ws]);
+
+  // Update connection status
+  useEffect(() => {
+    if (onConnectionChange) {
+      onConnectionChange(ws.isConnected);
+    }
+  }, [ws.isConnected, onConnectionChange]);
+
+  // Handle chat messages
+  const handleSendChat = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !initialPlayer || !ws.isConnected) return;
+
+    ws.sendMessage({
+      type: 'chat',
+      payload: {
+        playerId: initialPlayer.id,
+        message: chatInput.trim(),
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    setChatInput('');
+  }, [chatInput, initialPlayer, ws.isConnected, ws.sendMessage]);
+
+  // Handle game actions
+  const handleAction = useCallback((action: PlayerAction) => {
+    if (!initialPlayer || !ws.isConnected) return;
+
+    const currentPlayerState = players.find(p => p.id === initialPlayer.id);
+    if (!currentPlayerState) return;
+
+    ws.sendMessage({
+      type: 'playerAction',
+      payload: {
+        type: action,
+        amount: action === 'raise' ? parseInt(betAmount) || currentBet * 2 : undefined
+      }
+    });
+
+    if (action === 'raise') {
+      setBetAmount('');
+    }
+  }, [betAmount, currentBet, initialPlayer, players, ws.isConnected, ws.sendMessage]);
+
+  // Handle game start
+  const handleStartGame = useCallback(() => {
+    if (!ws.isConnected) return;
+    
+    console.log('Sending start game');
+    ws.sendMessage({
+      type: 'startGame',
+      payload: {}
+    });
+  }, [ws.isConnected, ws.sendMessage]);
+
+  // Add this type for pot distribution
+  interface PotWinner {
+    playerId: string;
+    amount: number;
+    hand: { type: string; description: string };
+  }
+
+  // Add this at the top of the file after imports
+  const pulsingBorder = `
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap');
+    
+    @keyframes pulse-border {
+      0% { border-color: rgba(234, 179, 8, 0.8); }
+      50% { border-color: rgba(234, 179, 8, 0.4); }
+      100% { border-color: rgba(234, 179, 8, 0.8); }
+    }
+    .active-player {
+      border-width: 3px;
+      animation: pulse-border 0.8s ease-in-out infinite;
+    }
+  `;
+
+  // Add initialization tracking
+  const isInitializedRef = useRef(false);
+  const playerInitializedRef = useRef(false);
+  const connectionRef = useRef({
+    isInitialized: false,
+    isConnecting: false,
+    shouldCleanup: false,
+    ws: null as any
+  });
+  const isFastRefreshRef = useRef(false);
+
+  // Track initial player for strict mode
+  const initialPlayerRef = useRef(initialPlayer);
+
+  // Initialize players state with the current player
+  const [playersState, setPlayersState] = useState<Player[]>(() => {
+    if (!isInitializedRef.current && initialPlayer) {
+      isInitializedRef.current = true;
+      initialPlayerRef.current = initialPlayer;
+      console.log('Initializing player state with:', initialPlayer);
+      return [{
+        ...initialPlayer,
+        // Use temporary position 0 until server assigns one
+        position: 0 as TablePosition,
+        isActive: true,
+        isCurrent: false,
+        isDealer: false,
+        currentBet: 0,
+        avatarUrl: AVATAR_URLS[0],
+        cards: [],
+        isConnected: true
+      }];
+    }
+    return [];
+  });
+
+  // Sync player state with initial player changes
+  useEffect(() => {
+    if (initialPlayer && !playerInitializedRef.current) {
+      console.log('Syncing player state with:', initialPlayer);
+      playerInitializedRef.current = true;
+      initialPlayerRef.current = initialPlayer;
+      
+      setPlayersState([{
+        ...initialPlayer,
+        position: 1 as TablePosition,
+        isActive: true,
+        isCurrent: false,
+        isDealer: false,
+        currentBet: 0,
+        avatarUrl: AVATAR_URLS[0],
+        cards: [],
+        isConnected: true
+      }]);
+    }
+  }, [initialPlayer]);
+
+  // Reset initialization flag on unmount
+  useEffect(() => {
+    return () => {
+      if (!isFastRefreshRef.current) {
+        playerInitializedRef.current = false;
+      }
+    };
+  }, []);
+
+  const [gameState, setGameState] = useState<GameState | null>(null);
   const [eliminationMessage, setEliminationMessage] = useState<string>('');
-  const [isEliminated, setIsEliminated] = useState(false);
   const [potDistributionMessage, setPotDistributionMessage] = useState<string>('');
   const [originalCards, setOriginalCards] = useState<Map<string, Card[]>>(new Map());
   const [showSystemMessages, setShowSystemMessages] = useState(true);
   const [showPlayerChat, setShowPlayerChat] = useState(true);
+  const [nextLevelIn, setNextLevelIn] = useState(600); // 10 minutes in seconds
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const announcedPlayers = useRef<Set<string>>(new Set());
+
+  // Add Fast Refresh detection
+  const prevTableIdRef = useRef(tableId);
+  const prevPlayerRef = useRef(initialPlayer);
+
+  // Check if this is a Fast Refresh
+  useEffect(() => {
+    if (
+      prevTableIdRef.current === tableId &&
+      prevPlayerRef.current === initialPlayer &&
+      process.env.NODE_ENV === 'development'
+    ) {
+      isFastRefreshRef.current = true;
+    }
+    prevTableIdRef.current = tableId;
+    prevPlayerRef.current = initialPlayer;
+  }, [tableId, initialPlayer]);
 
   // Auto scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -205,37 +424,13 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   }, [chatMessages]);
 
   // Calculate default raise amount
-  const minBet = gameState?.smallBlind ? gameState.smallBlind * 2 : 20;
   const defaultRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
 
-  useEffect(() => {
-    if (!tableId || !initialPlayer) return;
-
-    const cleanup = () => {
-      pokerWebSocket.cleanup();
-    };
-
-    try {
-      // Clean up any existing connections
-      pokerWebSocket.cleanup();
-
-      // Set up WebSocket event handlers
-      pokerWebSocket.on('connect', () => {
-        setIsConnected(true);
-        console.log('WebSocket connected');
-        onConnectionChange?.(true);
-      });
-
-      pokerWebSocket.on('disconnect', () => {
-        setIsConnected(false);
-        console.log('WebSocket disconnected');
-        onConnectionChange?.(false);
-      });
-
-      pokerWebSocket.on('message', (data: Record<string, unknown>) => {
+  // Memoize the handleGameState callback
+  const handleGameState = useCallback((data: Record<string, unknown>) => {
         if (data.type === 'gameState') {
           const state = data.payload as GameState;
-          console.log('Received game state:', state);
+        console.log('Received game state:', state);
           setGameState(state);
           
           // Update game state
@@ -258,42 +453,10 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             }
           }
 
-          setPlayers(updatedPlayers);
-          setCommunityCards(state.communityCards || []);
-          setPot(state.pot || 0);
-          setCurrentBet(state.currentBet || 0);
-
-          // Handle all-in situations
-          if (state.status === 'playing') {
-            const activePlayers = state.players.filter((p: Player) => !p.folded);
-            const playersWithChips = activePlayers.filter((p: Player) => p.chips > 0);
-            const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
-
-            if (allPlayersAllIn) {
-              if (state.communityCards.length === 0) {
-                setTimeout(() => {
-                  pokerWebSocket.sendMessage({
-                    type: 'dealCommunityCards',
-                    payload: { street: 'flop' }
-                  });
-                }, 1000);
-              } else if (state.communityCards.length === 3) {
-                setTimeout(() => {
-                  pokerWebSocket.sendMessage({
-                    type: 'dealCommunityCards',
-                    payload: { street: 'turn' }
-                  });
-                }, 2000);
-              } else if (state.communityCards.length === 4) {
-                setTimeout(() => {
-                  pokerWebSocket.sendMessage({
-                    type: 'dealCommunityCards',
-                    payload: { street: 'river' }
-                  });
-                }, 2000);
-              }
-            }
-          }
+        setPlayersState(updatedPlayers);
+        setCommunityCards(state.communityCards || []);
+        setPot(state.pot || 0);
+        setCurrentBet(state.currentBet || 0);
         } else if (data.type === 'chat') {
           const chatMessage = data.payload as ChatMessage;
           addChatMessage({
@@ -307,87 +470,181 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             timestamp: new Date()
           });
         }
+  }, [initialPlayer]);
+
+  // WebSocket message handler
+  const handleMessage = useCallback((data: any) => {
+    if (data.type === 'gameState') {
+      const gameState = data.payload;
+      
+      // Update players with positions from server
+      setPlayersState(prev => {
+        const updatedPlayers = gameState.players.map((p: any) => {
+          const player = {
+            id: p.id,
+            name: p.name,
+            chips: p.chips,
+            position: p.position,
+            isActive: p.isActive ?? true,
+            isCurrent: p.isCurrent ?? false,
+            isDealer: p.isDealer ?? false,
+            currentBet: p.currentBet || 0,
+            cards: p.cards || [],
+            avatarUrl: p.position ? AVATAR_URLS[(p.position - 1) % AVATAR_URLS.length] : undefined
+          };
+          
+          if (p.position) {
+            console.log(`Server assigned position ${p.position} to player ${p.name}`);
+          }
+          return player;
+        });
+
+        console.log('Updated players with server positions:', updatedPlayers);
+        return updatedPlayers;
       });
 
-      // Initialize WebSocket connection with player data
-      pokerWebSocket.init({
-        tableId,
-        playerId: initialPlayer.id,
-        playerData: {
-          name: initialPlayer.name,
-          chips: initialPlayer.chips
+      // Update tournament state
+      if (gameState.status === 'playing') {
+        setIsStarted(true);
+      }
+    } else if (data.type === 'playerJoined') {
+      // Log when a new player joins
+      const joinedPlayer = data.payload.player;
+      console.log(`Player ${joinedPlayer.name} joined with position ${joinedPlayer.position}`);
+    }
+  }, []);
+
+  // Initialize player state
+  useEffect(() => {
+    if (initialPlayer) {
+      console.log('Initializing player state with:', initialPlayer);
+      setPlayersState(prev => {
+        // Only update if player doesn't exist yet
+        if (!prev.some(p => p.id === initialPlayer.id)) {
+          return [...prev, {
+            ...initialPlayer,
+            // Let server assign position
+            avatarUrl: initialPlayer.position ? AVATAR_URLS[(initialPlayer.position - 1) % AVATAR_URLS.length] : undefined
+          }];
         }
+        return prev;
       });
+    }
+  }, [initialPlayer]);
 
-    } catch (error) {
-      console.error('Error in useEffect:', error);
+  // WebSocket connection effect
+  useEffect(() => {
+    // Don't reinitialize if this is a Fast Refresh
+    if (isFastRefreshRef.current) {
+      console.log('Fast Refresh detected, preserving WebSocket connection');
+      isFastRefreshRef.current = false;
+      return;
     }
 
-    return cleanup;
-  }, [tableId, initialPlayer, onConnectionChange]);
+    // Don't initialize if we don't have a player or if already connected
+    if (!initialPlayer || connectionRef.current.isInitialized) {
+      console.log('Skipping WebSocket initialization:', 
+        !initialPlayer ? 'no player' : 'already initialized');
+      return;
+    }
+
+    console.log('Initializing WebSocket connection:', {
+      tableId: actualTableId,
+      player: {
+        id: initialPlayer.id,
+        name: initialPlayer.name,
+        chips: initialPlayer.chips
+      }
+    });
+
+    const handleConnect = () => {
+      console.log('WebSocket connected successfully:', {
+        player: initialPlayer.id,
+        table: actualTableId
+      });
+      connectionRef.current.isConnecting = false;
+    };
+
+    const handleDisconnect = () => {
+      console.log('WebSocket disconnected:', {
+        player: initialPlayer.id,
+        table: actualTableId
+      });
+      connectionRef.current.isConnecting = false;
+    };
+
+    const handleError = (data: Record<string, unknown>) => {
+      console.error('WebSocket error:', {
+        player: initialPlayer.id,
+        table: actualTableId,
+        error: data.error
+      });
+    };
+
+    // Initialize WebSocket connection
+    console.log('Creating WebSocket connection:', {
+      tableId: actualTableId,
+      playerId: initialPlayer.id
+    });
+    
+    ws.connect(actualTableId, initialPlayer.id, {
+      name: initialPlayer.name,
+      chips: initialPlayer.chips || 1000
+    });
+
+    ws.on('connect', handleConnect);
+    ws.on('disconnect', handleDisconnect);
+    ws.on('error', handleError);
+    ws.on('message', handleMessage);
+
+    // Store WebSocket instance and mark as initialized
+    connectionRef.current.ws = ws;
+    connectionRef.current.isInitialized = true;
+    connectionRef.current.isConnecting = true;
+    connectionRef.current.shouldCleanup = false;
+
+    // Cleanup function
+    return () => {
+      // Only cleanup if component is truly unmounting and not Fast Refreshing
+      if (!connectionRef.current.shouldCleanup || isFastRefreshRef.current) {
+        console.log('Skipping cleanup due to Fast Refresh or not ready for cleanup');
+        return;
+      }
+      
+      console.log('Cleaning up WebSocket connection:', {
+        player: initialPlayer.id,
+        table: actualTableId
+      });
+      
+      const ws = connectionRef.current.ws;
+      if (ws) {
+        ws.off('connect', handleConnect);
+        ws.off('disconnect', handleDisconnect);
+        ws.off('error', handleError);
+        ws.off('message', handleMessage);
+        ws.cleanup();
+      }
+      
+      connectionRef.current.isInitialized = false;
+      connectionRef.current.isConnecting = false;
+      connectionRef.current.ws = null;
+    };
+  }, [actualTableId, initialPlayer, ws, handleMessage]);
+
+  // Add cleanup effect for true unmount
+  useEffect(() => {
+    return () => {
+      // Only set cleanup flag if not Fast Refreshing
+      if (!isFastRefreshRef.current) {
+        console.log('Component unmounting, marking for cleanup');
+        connectionRef.current.shouldCleanup = true;
+      }
+    };
+  }, []);
 
   const addChatMessage = (message: ChatMessage) => {
     setChatMessages(prev => [...prev, message]);
   };
-
-  const handleSendChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !initialPlayer || !isConnected) return;
-
-    pokerWebSocket.sendMessage({
-      type: 'chat',
-      payload: {
-        playerId: initialPlayer.id,
-        message: chatInput.trim(),
-        timestamp: new Date().toISOString()
-      }
-    });
-
-    setChatInput('');
-  };
-
-  const handleAction = (action: PlayerAction) => {
-    if (!initialPlayer || !isConnected) return;
-
-    const currentPlayerState = players.find(p => p.id === initialPlayer.id);
-    if (!currentPlayerState) return;
-
-    // Check if all players are all-in
-    const activePlayers = players.filter(p => !p.folded);
-    const playersWithChips = activePlayers.filter(p => p.chips > 0);
-    const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
-
-    // If everyone is all-in, don't allow any more actions
-    if (allPlayersAllIn) {
-      console.log('All players are all-in, no more actions allowed');
-      return;
-    }
-
-    // Send action to server
-    pokerWebSocket.sendMessage({
-      type: 'playerAction',
-      payload: {
-        type: action,
-        amount: action === 'raise' ? parseInt(betAmount) || currentBet * 2 : undefined
-      }
-    });
-
-    // Clear bet amount after action
-    if (action === 'raise') {
-      setBetAmount('');
-    }
-  };
-
-  // Wrap handleStartGame in useCallback
-  const handleStartGame = useCallback(() => {
-    console.log('Sending start game');
-    if (pokerWebSocket) {
-      pokerWebSocket.sendMessage({
-        type: 'startGame',
-        payload: {}
-      });
-    }
-  }, [pokerWebSocket]);
 
   const handleBetSize = (size: 'half' | 'twoThirds' | 'pot' | 'allin') => {
     if (!initialPlayer) return;
@@ -403,7 +660,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
         setBetAmount(pot.toString());
         break;
       case 'allin':
-        const player = players.find(p => p.id === initialPlayer.id);
+        const player = playersState.find(p => p.id === initialPlayer.id);
         if (player) {
           setBetAmount(player.chips.toString());
         }
@@ -412,11 +669,11 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   };
 
   const handleBetChange = (direction: 'increase' | 'decrease') => {
-    if (!initialPlayer || !isConnected) return;
+    if (!initialPlayer || !ws.isConnected) return;
 
     // Calculate minimum raise amount based on current bet
     const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
-    
+
     const currentValue = parseInt(betAmount) || minRaiseAmount;
     const newBet = direction === 'increase' 
       ? currentValue + minBet 
@@ -426,11 +683,11 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   };
 
   const handleBetInput = (value: string) => {
-    if (!initialPlayer || !isConnected) return;
+    if (!initialPlayer || !ws.isConnected) return;
 
     // Calculate minimum raise amount based on current bet
     const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
-    
+
     const newBet = parseInt(value);
     if (!isNaN(newBet) && newBet >= minRaiseAmount) {
       setBetAmount(newBet.toString());
@@ -438,7 +695,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   };
 
   // Get active players count
-  const activePlayersCount = players.filter(p => p.isActive).length;
+  const activePlayersCount = playersState.filter(p => p.isActive).length;
 
   // Add this helper function to determine the winner
   function determineWinner(players: Player[], communityCards: Card[]): { 
@@ -465,13 +722,13 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
 
   // Modify the SeatComponent to show only hand evaluation during showdown
   const SeatComponent = ({ position }: { position: TablePosition }) => {
-    const player = players.find(p => p.position === position);
+    const player = playersState.find(p => p.position === position);
     const isBottomHalf = [4, 5, 6, 7].includes(position);
     const isFolded = player && !player.isActive;
     const isShowdown = gameState?.status === 'finished' && gameState?.phase === 'showdown';
     
     // Check if all active players are all-in
-    const activePlayers = players.filter(p => !p.folded);
+    const activePlayers = playersState.filter(p => !p.folded);
     const playersWithChips = activePlayers.filter(p => p.chips > 0);
     const allPlayersAllIn = activePlayers.length >= 2 && playersWithChips.length === 0;
     
@@ -480,7 +737,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
     
     // Determine if this player is the winner during showdown
     const isWinner = isShowdown && player?.isActive && (() => {
-      const { winnerId } = determineWinner(players, communityCards);
+      const { winnerId } = determineWinner(playersState, communityCards);
       return player.id === winnerId;
     })();
     
@@ -500,14 +757,14 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
               {!isShowdown || isFolded ? (
                 // Normal display during gameplay or for folded players
                 <>
-                  {player.isDealer && (
-                    <div className="w-4 h-4 bg-white rounded-full text-black text-[10px] flex items-center justify-center font-bold">
-                      D
-                    </div>
-                  )}
-                  <span className="text-white text-xs font-bold">{player.name}</span>
-                  <span className="text-gray-400 text-xs">|</span>
-                  <span className="text-yellow-400 text-xs font-bold">{player.chips}</span>
+              {player.isDealer && (
+                <div className="w-4 h-4 bg-white rounded-full text-black text-[10px] flex items-center justify-center font-bold">
+                  D
+                </div>
+              )}
+              <span className="text-white text-xs font-bold">{player.name}</span>
+              <span className="text-gray-400 text-xs">|</span>
+              <span className="text-yellow-400 text-xs font-bold">{player.chips}</span>
                 </>
               ) : player.isActive ? (
                 // Show only hand evaluation for active players during showdown
@@ -553,19 +810,20 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
         {/* Seat circle */}
         <div className={`w-20 h-20 rounded-full flex flex-col items-center justify-center overflow-hidden border-2 ${
           isWinner 
-            ? 'border-yellow-400 shadow-lg shadow-yellow-400/50'
+            ? 'border-yellow-400 shadow-lg shadow-yellow-400/50' 
             : player?.isCurrent 
               ? 'border-yellow-500 active-player shadow-lg shadow-yellow-500/50' 
-              : 'border-gray-600'
+            : 'border-gray-600'
         } ${
           !player ? 'bg-gray-800 opacity-60 font-bold' : 'bg-gray-800'
         }`}>
           {player ? (
             <Image
-              src={AVATAR_URLS[position - 1]}
+              src={player.avatarUrl || AVATAR_URLS[position - 1]} 
               alt={player.name}
               width={80}
               height={80}
+              sizes="(max-width: 768px) 80px, 120px"
               className={`w-full h-full object-cover ${isFolded ? 'opacity-50 grayscale' : ''}`}
             />
           ) : (
@@ -579,8 +837,8 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   // Modify the winner announcement effect
   useEffect(() => {
     if (gameState?.status === 'finished' && gameState?.phase === 'showdown') {
-      const { winnerId, winningHand } = determineWinner(players, communityCards);
-      const winner = players.find(p => p.id === winnerId);
+      const { winnerId, winningHand } = determineWinner(playersState, communityCards);
+      const winner = playersState.find(p => p.id === winnerId);
       
       if (winner) {
         // Set the pot distribution message
@@ -600,7 +858,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
         }, 5000);
       }
     }
-  }, [gameState?.status, gameState?.phase, players, communityCards, pot, handleStartGame]);
+  }, [gameState?.status, gameState?.phase, playersState, communityCards, pot, handleStartGame]);
 
   // Helper function for ordinal suffixes
   const getOrdinalSuffix = (n: number): string => {
@@ -615,6 +873,29 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   const currentPhase = gameState?.phase ?? 'pre-flop';
   const gameStatus = gameState?.status ?? 'waiting';
 
+  // Add formatTime function
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Add timer effect
+  useEffect(() => {
+    if (gameState?.status !== 'playing') return;
+
+    const timer = setInterval(() => {
+      setNextLevelIn(prev => {
+        if (prev <= 0) {
+          return 600; // Reset to 10 minutes
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameState?.status]);
+
   return (
     <div className="relative w-full h-full">
       <style>{pulsingBorder}</style>
@@ -628,12 +909,12 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
         </div>
       )}
       
-      <div className="h-full flex flex-col">
-        <div className="flex-1 flex gap-3 p-3">
-          <div className="flex-1 flex flex-col gap-3 overflow-visible">
-            <div className="h-[70%] relative overflow-visible">
-              <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
-                <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
+    <div className="h-full flex flex-col">
+      <div className="flex-1 flex gap-3 p-3">
+        <div className="flex-1 flex flex-col gap-3 overflow-visible">
+          <div className="h-[70%] relative overflow-visible">
+            <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
+              <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
                   {pot > 0 && (
                     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
                       <PotDisplay amount={pot} />
@@ -680,73 +961,73 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
 
                   {gameStatus === 'waiting' && (
                     <div className="absolute inset-0 flex items-center justify-center z-20">
-                      <button
-                        onClick={handleStartGame}
+                  <button
+                    onClick={handleStartGame}
                         className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                      >
-                        Start Game
-                      </button>
+                  >
+                    Start Game
+                  </button>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="absolute top-0 left-1/3 transform -translate-x-1/2">
-                <SeatComponent position={1 as TablePosition} />
-              </div>
-              <div className="absolute top-0 right-1/3 transform translate-x-1/2">
-                <SeatComponent position={2 as TablePosition} />
-              </div>
-
-              <div className="absolute top-1/4 right-16 transform -translate-y-1/2">
-                <SeatComponent position={3 as TablePosition} />
-              </div>
-              <div className="absolute bottom-1/4 right-16 transform translate-y-1/2">
-                <SeatComponent position={4 as TablePosition} />
-              </div>
-
-              <div className="absolute bottom-0 right-1/3 transform translate-x-1/2">
-                <SeatComponent position={5 as TablePosition} />
-              </div>
-              <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2">
-                <SeatComponent position={6 as TablePosition} />
-              </div>
-
-              <div className="absolute bottom-1/4 left-16 transform translate-y-1/2">
-                <SeatComponent position={7 as TablePosition} />
-              </div>
-              <div className="absolute top-1/4 left-16 transform -translate-y-1/2">
-                <SeatComponent position={8 as TablePosition} />
+                )}
               </div>
             </div>
 
-            <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
-              <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
+            <div className="absolute top-0 left-1/3 transform -translate-x-1/2">
+              <SeatComponent position={1 as TablePosition} />
+            </div>
+            <div className="absolute top-0 right-1/3 transform translate-x-1/2">
+              <SeatComponent position={2 as TablePosition} />
+            </div>
+
+            <div className="absolute top-1/4 right-16 transform -translate-y-1/2">
+              <SeatComponent position={3 as TablePosition} />
+            </div>
+            <div className="absolute bottom-1/4 right-16 transform translate-y-1/2">
+              <SeatComponent position={4 as TablePosition} />
+            </div>
+
+            <div className="absolute bottom-0 right-1/3 transform translate-x-1/2">
+              <SeatComponent position={5 as TablePosition} />
+            </div>
+            <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2">
+              <SeatComponent position={6 as TablePosition} />
+            </div>
+
+            <div className="absolute bottom-1/4 left-16 transform translate-y-1/2">
+              <SeatComponent position={7 as TablePosition} />
+            </div>
+            <div className="absolute top-1/4 left-16 transform -translate-y-1/2">
+              <SeatComponent position={8 as TablePosition} />
+            </div>
+          </div>
+
+          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
+            <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
                 {initialPlayer?.id && originalCards.has(initialPlayer.id) ? (
-                  <div className="flex gap-2">
+                <div className="flex gap-2">
                     {(originalCards.get(initialPlayer.id) || []).map((card, i) => (
-                      <div key={i} className="w-24 h-36 relative">
+                    <div key={i} className="w-24 h-36 relative">
                         <Image
-                          src={`/cards/${card.rank}${card.suit}.png`}
+                        src={`/cards/${card.rank}${card.suit}.png`}
                           alt={`${card.rank} of ${card.suit}`}
                           width={60}
                           height={90}
                           className={`w-full h-full object-contain rounded-md shadow-lg ${
-                            !players.find(p => p.id === initialPlayer?.id)?.isActive 
+                            !playersState.find(p => p.id === initialPlayer?.id)?.isActive 
                               ? 'opacity-50 grayscale' 
                               : ''
                           }`}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-gray-400 text-sm">Your cards will appear here</div>
-                )}
-              </div>
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-gray-400 text-sm">Your cards will appear here</div>
+              )}
+            </div>
 
-              <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
-                <div className="text-white text-sm font-bold">Best Hand</div>
+              <div className="flex-none w-52 bg-black/50 p-4 rounded-lg">
+              <div className="text-white text-sm font-bold">Best Hand</div>
                 {initialPlayer?.id && originalCards.has(initialPlayer.id) ? (
                   <div className="text-yellow-400 text-lg font-bold mt-1">
                     {evaluateHand(
@@ -755,44 +1036,70 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                     ).description}
                   </div>
                 ) : (
-                  <div className="text-yellow-400 text-lg font-bold mt-1">
+              <div className="text-yellow-400 text-lg font-bold mt-1">
                     Waiting for cards...
+              </div>
+                )}
+            </div>
+
+              <div className="flex-none w-52 bg-black/50 p-4 rounded-lg">
+                <div className="text-white text-sm font-bold">Blinds</div>
+                <div className="flex items-center gap-4 mt-1">
+                  <div>
+                    <span className="text-gray-400 text-xs">CURRENT</span>
+                    <div className="text-yellow-400 text-lg font-bold">{smallBlind}/{bigBlind}</div>
+                  </div>
+                  {gameState?.status !== 'waiting' && (
+                    <div>
+                      <span className="text-gray-400 text-xs">NEXT</span>
+                      <div className="text-yellow-400 text-lg font-bold">{smallBlind * 2}/{bigBlind * 2}</div>
+                    </div>
+                  )}
+                </div>
+                {gameState?.status !== 'waiting' && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="text-gray-400 text-xs">
+                      next<br />level
+                    </div>
+                    <div className="text-2xl font-bold text-yellow-400 tabular-nums">
+                      {formatTime(nextLevelIn)}
+                    </div>
                   </div>
                 )}
               </div>
 
-              <div className="flex-1 flex flex-col gap-3 items-end">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleAction('fold')}
-                    className="bg-red-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-red-700 transition-colors border border-white"
-                  >
-                    FOLD
-                  </button>
+            <div className="flex-1 flex flex-col gap-3 items-end">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleAction('fold')}
+                  className="bg-red-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-red-700 transition-colors border border-white"
+                >
+                  FOLD
+                </button>
                   {(() => {
-                    const playerState = players.find(p => p.id === initialPlayer?.id);
+                    const playerState = playersState.find(p => p.id === initialPlayer?.id);
                     const canCheck = playerState && (
                       (playerState.currentBet === currentBet) ||
                       (currentBet === 0 && !playerState.hasActed)
                     );
 
                     return (
-                      <button
+                <button
                         onClick={() => handleAction(canCheck ? 'check' : 'call')}
-                        className="bg-blue-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-blue-700 transition-colors border border-white"
-                      >
+                  className="bg-blue-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-blue-700 transition-colors border border-white"
+                >
                         {canCheck ? 'CHECK' : 'CALL'}
-                      </button>
+                </button>
                     );
                   })()}
                   {(() => {
-                    const playerState = players.find(p => p.id === initialPlayer?.id);
+                    const playerState = playersState.find(p => p.id === initialPlayer?.id);
                     const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                     const canRaise = playerState && (playerState.chips > minRaiseAmount);
                     
                     return (
-                      <button
-                        onClick={() => handleAction('raise')}
+                <button
+                  onClick={() => handleAction('raise')}
                         disabled={!canRaise}
                         className={`${
                           canRaise 
@@ -801,172 +1108,172 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                         } text-white w-[8.5rem] py-4 rounded text-base font-bold transition-colors flex items-center justify-center gap-2 border border-white`}
                       >
                         <span>{currentBet === 0 ? 'BET' : 'RAISE'}</span>
-                        <span>{betAmount || currentBet * 2}</span>
-                      </button>
+                  <span>{betAmount || currentBet * 2}</span>
+                </button>
                     );
                   })()}
-                </div>
+              </div>
 
-                <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3">
                   <div className={`flex gap-3 w-[8.5rem] ${
                     (() => {
-                      const playerState = players.find(p => p.id === initialPlayer?.id);
+                      const playerState = playersState.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                       return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
                     })()
                   }`}>
-                    <button
-                      onClick={() => handleBetSize('half')}
-                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                    >
-                      1/2
-                    </button>
-                    <button
-                      onClick={() => handleBetSize('twoThirds')}
-                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                    >
-                      2/3
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleBetSize('half')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    1/2
+                  </button>
+                  <button
+                    onClick={() => handleBetSize('twoThirds')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    2/3
+                  </button>
+                </div>
                   <div className={`flex gap-3 w-[8.5rem] ${
                     (() => {
-                      const playerState = players.find(p => p.id === initialPlayer?.id);
+                      const playerState = playersState.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                       return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
                     })()
                   }`}>
-                    <button
-                      onClick={() => handleBetSize('pot')}
-                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                    >
-                      POT
-                    </button>
-                    <button
-                      onClick={() => handleBetSize('allin')}
-                      className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
-                    >
-                      ALL IN
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleBetSize('pot')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    POT
+                  </button>
+                  <button
+                    onClick={() => handleBetSize('allin')}
+                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                  >
+                    ALL IN
+                  </button>
+                </div>
                   <div className={`flex items-center gap-2 w-[8.5rem] ${
                     (() => {
-                      const playerState = players.find(p => p.id === initialPlayer?.id);
+                      const playerState = playersState.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
                       return playerState && playerState.chips <= minRaiseAmount ? 'opacity-50 pointer-events-none' : '';
                     })()
                   }`}>
-                    <button
-                      onClick={() => handleBetChange('decrease')}
-                      className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      value={betAmount}
-                      onChange={(e) => handleBetInput(e.target.value)}
-                      className="w-20 px-3 py-2 bg-white text-black text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      placeholder={`${currentBet * 2}`}
-                    />
-                    <button
-                      onClick={() => handleBetChange('increase')}
-                      className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
-                    >
-                      +
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleBetChange('decrease')}
+                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    value={betAmount}
+                    onChange={(e) => handleBetInput(e.target.value)}
+                    className="w-20 px-3 py-2 bg-white text-black text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    placeholder={`${currentBet * 2}`}
+                  />
+                  <button
+                    onClick={() => handleBetChange('increase')}
+                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="w-80 h-full flex flex-col bg-gray-800 rounded-lg">
-            <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showSystemMessages}
-                    onChange={() => setShowSystemMessages(!showSystemMessages)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 font-bold">CHAT</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showPlayerChat}
-                    onChange={() => setShowPlayerChat(!showPlayerChat)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
-                </label>
-              </div>
-            </div>
-
-            <div className="h-[550px] overflow-y-auto">
-              <div className="p-3 space-y-2">
-                {chatMessages
-                  .filter(msg => (
-                    (msg.playerId === 'system' && showSystemMessages) ||
-                    (msg.playerId !== 'system' && showPlayerChat)
-                  ))
-                  .map((msg, i) => (
-                    <div 
-                      key={i} 
-                      className={`${
-                        msg.playerId === 'system' 
-                          ? 'bg-gray-900/50 text-gray-300 text-[11px] py-1.5 px-2 rounded border border-gray-700/50' 
-                          : 'flex flex-col gap-0.5'
-                      }`}
-                    >
-                      {msg.playerId !== 'system' && (
-                        <span className="text-[10px] text-gray-400 px-2">
-                          {players.find(p => p.id === msg.playerId)?.name || msg.playerId}
-                        </span>
-                      )}
-                      {msg.playerId === 'system' ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                          <span>{msg.message}</span>
-                        </div>
-                      ) : (
-                        <div className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] ${
-                          msg.playerId === initialPlayer?.id
-                            ? 'bg-blue-600/50 text-white ml-auto rounded-tr-none'
-                            : 'bg-gray-700/50 text-white rounded-tl-none'
-                        }`}>
-                          {msg.message}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                <div ref={chatEndRef} />
-              </div>
-            </div>
-
-            <div className="flex-none h-12 p-2 border-t border-gray-700">
-              <form onSubmit={handleSendChat} className="flex gap-2 h-full">
+          <div className="w-80 h-full flex flex-col bg-gray-900 rounded-lg">
+          <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
+              <label className="relative inline-flex items-center cursor-pointer">
                 <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Type a message..."
-                  className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  disabled={!isConnected}
+                  type="checkbox"
+                  checked={showSystemMessages}
+                  onChange={() => setShowSystemMessages(!showSystemMessages)}
+                  className="sr-only peer"
                 />
-                <button
-                  type="submit"
-                  disabled={!isConnected || !chatInput.trim()}
-                  className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
-                >
-                  Send
-                </button>
-              </form>
+                <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 font-bold">CHAT</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPlayerChat}
+                  onChange={() => setShowPlayerChat(!showPlayerChat)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+              </label>
+            </div>
+          </div>
+
+          <div className="h-[550px] overflow-y-auto">
+            <div className="p-3 space-y-2">
+              {chatMessages
+                .filter(msg => (
+                  (msg.playerId === 'system' && showSystemMessages) ||
+                  (msg.playerId !== 'system' && showPlayerChat)
+                ))
+                .map((msg, i) => (
+                  <div 
+                    key={i} 
+                    className={`${
+                      msg.playerId === 'system' 
+                        ? 'bg-gray-900/50 text-gray-300 text-[11px] py-1.5 px-2 rounded border border-gray-700/50' 
+                        : 'flex flex-col gap-0.5'
+                    }`}
+                  >
+                    {msg.playerId !== 'system' && (
+                      <span className="text-[10px] text-gray-400 px-2">
+                        {playersState.find(p => p.id === msg.playerId)?.name || msg.playerId}
+                      </span>
+                    )}
+                    {msg.playerId === 'system' ? (
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                        <span>{msg.message}</span>
+                      </div>
+                    ) : (
+                      <div className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] ${
+                          msg.playerId === initialPlayer?.id
+                          ? 'bg-blue-600/50 text-white ml-auto rounded-tr-none'
+                          : 'bg-gray-700/50 text-white rounded-tl-none'
+                      }`}>
+                        {msg.message}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              <div ref={chatEndRef} />
+            </div>
+          </div>
+
+            <div className="flex-none h-12 p-2 border-t border-gray-800">
+            <form onSubmit={handleSendChat} className="flex gap-2 h-full">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Type a message..."
+                className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={!ws.isConnected}
+              />
+              <button
+                type="submit"
+                disabled={!ws.isConnected || !chatInput.trim()}
+                className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
+              >
+                Send
+              </button>
+            </form>
             </div>
           </div>
         </div>
@@ -990,13 +1297,14 @@ function getPlayerPosition(position: number): string {
   return positions[position as keyof typeof positions] || '';
 }
 
-function findNextAvailablePosition(players: Player[]): TablePosition {
-  const takenPositions = new Set(players.map(p => p.position));
-  let position = 2 as TablePosition;
-  while (takenPositions.has(position) && position <= 8) {
-    position = ((position + 1) as TablePosition);
+function findNextAvailablePosition(usedPositions: number[]): TablePosition {
+  const usedSet = new Set(usedPositions);
+  for (let pos = 2; pos <= 8; pos++) {
+    if (!usedSet.has(pos)) {
+      return pos as TablePosition;
+    }
   }
-  return position <= 8 ? position : (2 as TablePosition);
+  return 2 as TablePosition; // Fallback to position 2 if all are taken
 }
 
 function findNextAvailableAvatar(players: Player[]): string {
