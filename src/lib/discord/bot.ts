@@ -1,43 +1,28 @@
-import { Client, GatewayIntentBits, Events } from 'discord.js';
-import { registerCommands } from './commands';
+import { Client, Events, GatewayIntentBits, Interaction } from 'discord.js';
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+client.once(Events.ClientReady, c => {
+  console.log(`Ready! Logged in as ${c.user.tag}`);
 });
 
-client.once(Events.ClientReady, () => {
-  console.log('Discord bot is ready! 🚀');
-});
-
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isCommand()) return;
 
   try {
-    const command = interaction.client.commands.get(interaction.commandName);
-    if (!command) return;
-
-    await command.execute(interaction);
+    // Handle commands through a separate command handler
+    const commandName = interaction.commandName;
+    switch (commandName) {
+      case 'ping':
+        await interaction.reply('Pong!');
+        break;
+      default:
+        await interaction.reply({ content: 'Unknown command!', ephemeral: true });
+    }
   } catch (error) {
     console.error(error);
-    await interaction.reply({
-      content: 'There was an error executing this command!',
-      ephemeral: true,
-    });
+    await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
   }
 });
 
-export function initializeBot() {
-  registerCommands();
-  
-  const token = process.env.DISCORD_BOT_TOKEN;
-  if (!token) {
-    throw new Error('DISCORD_BOT_TOKEN is not set in environment variables');
-  }
-
-  client.login(token);
-  return client;
-} 
+export default client; 
