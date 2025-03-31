@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { format, addMinutes } from 'date-fns';
+import { signIn } from 'next-auth/react';
 
 // Constants
 const GAME_TABLE_ID = 'dev-tournament';
@@ -86,23 +87,37 @@ export default function TournamentLobby() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <main className="h-screen bg-gray-900 text-white grid grid-rows-[60px_1fr] max-h-screen overflow-hidden">
       {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold">BUX Tournament</h1>
+      <header className="border-b border-gray-800">
+        <div className="container mx-auto px-4 h-[60px] flex justify-between items-center">
+          <Link href="/" className="flex items-center gap-3">
+            <Image src="/BUX.png" alt="BUX Logo" width={32} height={32} className="rounded-full" />
+            <span className="text-xl font-bold bg-gradient-to-r from-green-400 to-yellow-400 bg-clip-text text-transparent">
+              BUX POKER HUB
+            </span>
+          </Link>
+          <button
+            onClick={() => signIn('discord')}
+            className="flex items-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] transition-colors px-3 py-1.5 rounded-lg font-medium text-sm"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z"/>
+            </svg>
+            Login with Discord
+          </button>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-2 gap-6">
+      <div className="container mx-auto p-6 overflow-y-auto">
+        <div className="max-w-6xl mx-auto grid grid-cols-2 gap-6">
           {/* Left Column */}
           <div className="space-y-6">
             {/* Tournament Info */}
-            <div className="rounded-lg bg-gray-800 p-6">
-              <h2 className="text-2xl font-semibold mb-4">Tournament Information</h2>
-              <div className="space-y-2">
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <h2 className="text-2xl font-bold text-green-400 mb-4">Tournament Information</h2>
+              <div className="space-y-2 text-gray-300">
                 <p>Start Time: {formattedStartTime}</p>
                 <p>Players: {INITIAL_PLAYERS.length} seats</p>
                 <p>Starting Chips: 1,000</p>
@@ -118,8 +133,8 @@ export default function TournamentLobby() {
             </div>
 
             {/* Blind Schedule */}
-            <div className="rounded-lg bg-gray-800 p-6">
-              <h2 className="text-2xl font-semibold mb-4">Blind Schedule</h2>
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <h2 className="text-2xl font-bold text-green-400 mb-4">Blind Schedule</h2>
               <div className="overflow-y-auto max-h-[calc(100vh-36rem)]">
                 <table className="w-full">
                   <thead className="sticky top-0 bg-gray-800">
@@ -149,8 +164,8 @@ export default function TournamentLobby() {
           </div>
 
           {/* Right Column - Players */}
-          <div className="rounded-lg bg-gray-800 p-6">
-            <h2 className="text-2xl font-semibold mb-4">Players</h2>
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <h2 className="text-2xl font-bold text-green-400 mb-4">Players</h2>
             <div className="overflow-y-auto max-h-[calc(100vh-16rem)]">
               <table className="w-full">
                 <thead className="sticky top-0 bg-gray-800">
@@ -183,7 +198,7 @@ export default function TournamentLobby() {
                       <td className="p-2 text-right">
                         <Link
                           href={`/table/${GAME_TABLE_ID}/${player.name}`}
-                          className="inline-flex items-center px-3 py-1 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 transition-colors"
+                          className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-green-500 hover:bg-green-600 transition-colors"
                         >
                           Join
                         </Link>
@@ -196,6 +211,6 @@ export default function TournamentLobby() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 } 
