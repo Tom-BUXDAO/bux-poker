@@ -9,7 +9,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useWebSocket } from '@/lib/poker/WebSocketContext';
 import dynamic from 'next/dynamic';
-import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 
 const AVATAR_URLS = [
   'https://nftstorage.link/ipfs/bafybeigo7gili5wuojsywuwoift34g6mvvq56lrbk3ikp7r365a23es7je/4.png',
@@ -1180,7 +1180,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
           </div>
         </div>
 
-          <div className="w-80 h-full flex flex-col bg-gray-900 rounded-lg overflow-hidden">
+          <div className="w-80 h-full flex flex-col bg-gray-900 rounded-lg">
           <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400 font-medium tracking-wide">GLOBAL</span>
@@ -1208,7 +1208,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             </div>
           </div>
 
-          <div className="h-[550px] overflow-y-auto">
+          <div className="flex-1 overflow-y-auto bg-gray-900/70 rounded-lg border border-gray-700">
             <div className="p-3 space-y-2">
               {chatMessages
                 .filter(msg => (
@@ -1220,12 +1220,12 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                     key={i} 
                     className={`${
                       msg.playerId === 'system' 
-                        ? 'flex items-center gap-2 bg-gray-800/50 text-gray-300 text-xs py-1.5 px-3 rounded-lg border border-gray-700/50' 
+                        ? 'flex items-center gap-2 bg-gray-800 text-gray-300 text-xs py-1.5 px-3 rounded-lg border border-gray-700' 
                         : 'flex flex-col gap-0.5'
                     }`}
                   >
                     {msg.playerId !== 'system' && (
-                      <span className="text-[10px] text-gray-400 px-2">
+                      <span className="text-[10px] text-gray-300 px-2 font-medium">
                         {playersState.find(p => p.id === msg.playerId)?.name || msg.playerId}
                       </span>
                     )}
@@ -1240,13 +1240,13 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                           msg.playerId === initialPlayer?.id ? 'flex-row-reverse' : ''
                         }`}>
                           <div className="flex flex-col gap-1 max-w-[80%]">
-                            <span className="text-[10px] text-gray-400 font-medium px-1">
+                            <span className="text-[10px] text-gray-300 font-medium px-1">
                               {playersState.find(p => p.id === msg.playerId)?.name || msg.playerId}
                             </span>
-                            <div className={`px-3 py-2 rounded-2xl text-sm leading-snug font-medium ${
+                            <div className={`px-3 py-2 rounded-2xl text-sm leading-snug font-medium shadow-lg ${
                               msg.playerId === initialPlayer?.id
                                 ? 'bg-blue-600 text-white rounded-tr-none'
-                                : 'bg-gray-700 text-white rounded-tl-none'
+                                : 'bg-gray-800 text-white rounded-tl-none border border-gray-700'
                             }`}>
                               {msg.message}
                             </div>
@@ -1260,24 +1260,52 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             </div>
           </div>
 
-            <div className="flex-none h-12 p-2 border-t border-gray-800">
-            <form onSubmit={handleSendChat} className="flex gap-2 h-full">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                disabled={!ws.isConnected}
-              />
-              <button
-                type="submit"
-                disabled={!ws.isConnected || !chatInput.trim()}
-                className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
-              >
-                Send
-              </button>
-            </form>
+            <div className="flex-none h-12 border-t border-gray-700 bg-gray-900/70">
+              <form onSubmit={handleSendChat} className="flex gap-2 h-full p-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Type a message..."
+                    className="w-full bg-gray-800 text-white rounded-full px-4 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-700"
+                    disabled={!ws.isConnected}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                  >
+                    😊
+                  </button>
+                  {showEmojiPicker && (
+                    <div className="absolute bottom-12 right-0 z-50">
+                      <EmojiPicker
+                        onEmojiClick={(emojiData) => {
+                          setChatInput(prev => prev + emojiData.emoji);
+                          setShowEmojiPicker(false);
+                        }}
+                        width={300}
+                        height={400}
+                        theme={Theme.DARK}
+                        skinTonesDisabled
+                        searchDisabled
+                        lazyLoadEmojis
+                        previewConfig={{
+                          showPreview: false
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={!ws.isConnected || !chatInput.trim()}
+                  className="bg-blue-600 text-white px-4 rounded-full text-sm font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors shadow-lg"
+                >
+                  Send
+                </button>
+              </form>
             </div>
           </div>
         </div>
