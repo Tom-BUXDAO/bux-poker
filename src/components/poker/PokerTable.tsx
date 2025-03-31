@@ -8,6 +8,9 @@ import PotDisplay from './PotDisplay';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useWebSocket } from '@/lib/poker/WebSocketContext';
+import { Inter } from "next/font/google";
+import dynamic from 'next/dynamic';
+import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 
 const AVATAR_URLS = [
   'https://nftstorage.link/ipfs/bafybeigo7gili5wuojsywuwoift34g6mvvq56lrbk3ikp7r365a23es7je/4.png',
@@ -191,6 +194,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
   const [chatInput, setChatInput] = useState('');
   const [isStarted, setIsStarted] = useState(false);
   const minBet = 20;
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Add table ID validation with SSR support
   const actualTableId = useMemo(() => {
@@ -258,15 +262,17 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
     e.preventDefault();
     if (!chatInput.trim() || !initialPlayer || !ws.isConnected) return;
 
-    ws.sendMessage({
+    const chatMessage = {
       type: 'chat',
       payload: {
         playerId: initialPlayer.id,
         message: chatInput.trim(),
         timestamp: new Date().toISOString()
       }
-    });
+    };
 
+    console.log('Sending chat message:', chatMessage);
+    ws.sendMessage(chatMessage);
     setChatInput('');
   }, [chatInput, initialPlayer, ws.isConnected, ws.sendMessage]);
 
@@ -484,6 +490,15 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
       // Log when a new player joins
       const joinedPlayer = data.payload.player;
       console.log(`Player ${joinedPlayer.name} joined with position ${joinedPlayer.position}`);
+    } else if (data.type === 'chat') {
+      // Handle chat messages
+      const chatMessage = data.payload;
+      console.log('Received chat message:', chatMessage);
+      addChatMessage({
+        playerId: chatMessage.playerId,
+        message: chatMessage.message,
+        timestamp: new Date(chatMessage.timestamp)
+      });
     }
   }, []);
 
@@ -862,6 +877,11 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
     return () => clearInterval(timer);
   }, [gameState?.status]);
 
+  const handleEmojiClick = (emojiData: EmojiClickData) => {
+    setChatInput(prev => prev + emojiData.emoji);
+    setShowEmojiPicker(false);
+  };
+
   return (
     <div className="relative w-full h-full">
       <style>{pulsingBorder}</style>
@@ -1153,7 +1173,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
           </div>
         </div>
 
-          <div className="w-80 h-full flex flex-col bg-gray-900 rounded-lg">
+          <div className="w-80 h-full flex flex-col bg-gray-900 rounded-lg overflow-hidden">
           <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400 font-bold">SYSTEM</span>
@@ -1181,7 +1201,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             </div>
           </div>
 
-          <div className="h-[550px] overflow-y-auto">
+          <div className="flex-1 overflow-y-auto">
             <div className="p-3 space-y-2">
               {chatMessages
                 .filter(msg => (
@@ -1198,9 +1218,14 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                     }`}
                   >
                     {msg.playerId !== 'system' && (
-                      <span className="text-[10px] text-gray-400 px-2">
-                        {playersState.find(p => p.id === msg.playerId)?.name || msg.playerId}
-                      </span>
+                      <div className="flex items-center justify-between px-2">
+                        <span className="text-[10px] text-gray-400">
+                          {playersState.find(p => p.id === msg.playerId)?.name || msg.playerId}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
                     )}
                     {msg.playerId === 'system' ? (
                       <div className="flex items-center gap-1.5">
@@ -1222,23 +1247,43 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             </div>
           </div>
 
-            <div className="flex-none h-12 p-2 border-t border-gray-800">
-            <form onSubmit={handleSendChat} className="flex gap-2 h-full">
+            <div className="flex-none border-t border-gray-800">
+            <form onSubmit={handleSendChat} className="flex items-center h-12 px-2">
               <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="flex-1 bg-gray-900 text-white rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                 disabled={!ws.isConnected}
               />
-              <button
-                type="submit"
-                disabled={!ws.isConnected || !chatInput.trim()}
-                className="bg-blue-600 text-white px-3 rounded-full text-xs font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
-              >
-                Send
-              </button>
+              <div className="flex items-center gap-1 ml-1">
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded-full hover:bg-gray-800"
+                >
+                  😊
+                </button>
+                <button
+                  type="submit"
+                  disabled={!ws.isConnected || !chatInput.trim()}
+                  className="p-1.5 text-gray-400 hover:text-gray-200 transition-colors rounded-full hover:bg-gray-800 disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                  </svg>
+                </button>
+              </div>
+              {showEmojiPicker && (
+                <div className="absolute bottom-full right-0 mb-2">
+                  <EmojiPicker
+                    onEmojiClick={handleEmojiClick}
+                    width={280}
+                    height={400}
+                  />
+                </div>
+              )}
             </form>
             </div>
           </div>
