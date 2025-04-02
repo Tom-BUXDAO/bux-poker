@@ -109,24 +109,24 @@ export default function TableUpdatePage() {
 
                 {/* Game Info Tile */}
                 <div className="w-[55%] bg-black/50 rounded p-1">
-                  <div className="h-full flex flex-col justify-between text-base">
+                  <div className="h-full flex flex-col justify-between">
                     {/* Best Hand */}
                     <div>
-                      <span className="text-white uppercase tracking-wider font-medium block text-[1vw]">Best hand</span>
-                      <div className="text-yellow-400 font-semibold text-[1.2vw]">Waiting for cards...</div>
+                      <span className="text-white uppercase tracking-wider font-medium block text-[0.8vw]">Best hand</span>
+                      <div className="text-yellow-400 font-semibold text-[1vw]">Waiting for cards...</div>
                     </div>
 
                     {/* Blinds */}
                     <div>
-                      <span className="text-white uppercase tracking-wider font-medium block text-[1vw]">Blinds</span>
+                      <span className="text-white uppercase tracking-wider font-medium block text-[0.8vw]">Blinds</span>
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1">
-                          <span className="text-gray-400 text-[1vw]">Current</span>
-                          <span className="text-white font-semibold text-[1.2vw]">10/20</span>
+                          <span className="text-gray-400 text-[0.8vw]">Current</span>
+                          <span className="text-white font-semibold text-[1vw]">10/20</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-gray-400 text-[1vw]">Next</span>
-                          <span className="text-white font-semibold text-[1.2vw]">20/40</span>
+                          <span className="text-gray-400 text-[0.8vw]">Next</span>
+                          <span className="text-white font-semibold text-[1vw]">20/40</span>
                         </div>
                       </div>
                     </div>
@@ -134,8 +134,8 @@ export default function TableUpdatePage() {
                     {/* Timer */}
                     <div>
                       <div className="flex items-center gap-1">
-                        <span className="text-white uppercase tracking-wider font-medium text-[1vw]">Next level</span>
-                        <span className="text-yellow-400 font-semibold text-[1.2vw]">- 10:00</span>
+                        <span className="text-white uppercase tracking-wider font-medium text-[0.8vw]">Next level</span>
+                        <span className="text-yellow-400 font-semibold text-[1vw]">- 10:00</span>
                       </div>
                     </div>
                   </div>
@@ -147,15 +147,15 @@ export default function TableUpdatePage() {
                 {/* Fold Column */}
                 <div className="flex-1 h-full flex flex-col gap-2">
                   <div className="h-[65%]">
-                    <button className="h-full w-full bg-red-600 hover:bg-red-700 text-white font-bold rounded uppercase tracking-wider text-[1.4vw] border border-white">
+                    <button className="h-full w-full bg-red-600 hover:bg-red-700 text-white font-bold rounded uppercase tracking-wider text-sm lg:text-base border border-white">
                       Fold
                     </button>
                   </div>
                   <div className="h-[30%] flex gap-2">
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-[1.2vw] border border-green-500">
+                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
                       1/2
                     </button>
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-[1.2vw] border border-green-500">
+                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
                       2/3
                     </button>
                   </div>
@@ -164,15 +164,15 @@ export default function TableUpdatePage() {
                 {/* Check/Call Column */}
                 <div className="flex-1 h-full flex flex-col gap-2">
                   <div className="h-[65%]">
-                    <button className="h-full w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded uppercase tracking-wider text-[1.4vw] border border-white">
+                    <button className="h-full w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded uppercase tracking-wider text-sm lg:text-base border border-white">
                       Check
                     </button>
                   </div>
                   <div className="h-[30%] flex gap-2">
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-[1.2vw] border border-green-500">
+                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
                       POT
                     </button>
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-[1.2vw] border border-green-500">
+                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
                       ALL IN
                     </button>
                   </div>
@@ -181,21 +181,21 @@ export default function TableUpdatePage() {
                 {/* Bet/Raise Column */}
                 <div className="flex-1 h-full flex flex-col gap-2">
                   <div className="h-[65%]">
-                    <button className="h-full w-full bg-green-600 hover:bg-green-700 text-white font-bold rounded uppercase tracking-wider text-[1.4vw] border border-white">
+                    <button className="h-full w-full bg-green-600 hover:bg-green-700 text-white font-bold rounded uppercase tracking-wider text-sm lg:text-base border border-white">
                       Bet 0
                     </button>
                   </div>
                   <div className="h-[30%] grid grid-cols-3 gap-2">
-                    <button className="h-full bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-[1.2vw] border border-green-500">
+                    <button className="h-full bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-xs lg:text-sm border border-green-500">
                       -
                     </button>
                     <input 
                       type="text" 
-                      className="h-full bg-gray-800 text-white text-center rounded text-[1.2vw] border border-green-500"
+                      className="h-full bg-gray-800 text-white text-center rounded text-xs lg:text-sm border border-green-500"
                       value="0"
                       readOnly
                     />
-                    <button className="h-full bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-[1.2vw] border border-green-500">
+                    <button className="h-full bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-xs lg:text-sm border border-green-500">
                       +
                     </button>
                   </div>
