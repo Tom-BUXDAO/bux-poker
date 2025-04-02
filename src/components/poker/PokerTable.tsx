@@ -904,7 +904,8 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
       
     <div className="h-full flex flex-col">
       <div className="flex-1 flex gap-3 p-3">
-        <div className="flex-1 flex flex-col gap-3 overflow-visible">
+        {/* Main Game Area - 70% */}
+        <div className="flex-[0.7] flex flex-col gap-3 overflow-visible">
           <div className="h-[70%] relative overflow-visible">
             <div className="absolute inset-x-24 inset-y-12 rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
               <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
@@ -994,18 +995,20 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
             </div>
           </div>
 
-          <div className="h-[30%] bg-gray-900 rounded-lg p-4 flex items-center gap-8">
-            <div className="flex-none w-52 bg-black/30 p-4 rounded-lg">
+          {/* Control Panel - Now inline in mobile landscape */}
+          <div className="h-[30%] bg-gray-900 rounded-lg p-2 flex items-center gap-2">
+            {/* Large Card Display */}
+            <div className="h-full flex-none w-[15%] min-w-[80px] bg-black/30 p-1 rounded-lg flex flex-col justify-center">
                 {initialPlayer?.id && originalCards.has(initialPlayer.id) ? (
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-1">
                     {(originalCards.get(initialPlayer.id) || []).map((card, i) => (
-                    <div key={i} className="w-24 h-36 relative">
+                    <div key={i} className="w-full aspect-[2/3] relative">
                         <Image
                         src={`/cards/${card.rank}${card.suit}.png`}
                           alt={`${card.rank} of ${card.suit}`}
                           width={60}
                           height={90}
-                          className={`w-full h-full object-contain rounded-md shadow-lg ${
+                          className={`w-full h-full object-contain rounded-[4px] shadow-lg ${
                             !playersState.find(p => p.id === initialPlayer?.id)?.isActive 
                               ? 'opacity-50 grayscale' 
                               : ''
@@ -1015,57 +1018,61 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                   ))}
                 </div>
               ) : (
-                <div className="text-gray-400 text-sm">Your cards will appear here</div>
+                <div className="text-gray-400 text-[8px] sm:text-sm">Your cards will appear here</div>
               )}
             </div>
 
-              <div className="flex-none w-52 bg-black/50 p-4 rounded-lg">
-              <div className="text-white text-sm font-bold">Best Hand</div>
+            {/* Hand Evaluator */}
+            <div className="h-full flex-none w-[15%] min-w-[80px] bg-black/50 p-1 rounded-lg flex flex-col">
+              <div className="text-white text-[8px] sm:text-sm font-bold">Best Hand</div>
                 {initialPlayer?.id && originalCards.has(initialPlayer.id) ? (
-                  <div className="text-yellow-400 text-lg font-bold mt-1">
+                  <div className="text-yellow-400 text-[10px] sm:text-lg font-bold mt-0.5">
                     {evaluateHand(
                       originalCards.get(initialPlayer.id) || [],
                       communityCards
                     ).description}
                   </div>
                 ) : (
-              <div className="text-yellow-400 text-lg font-bold mt-1">
+              <div className="text-yellow-400 text-[10px] sm:text-lg font-bold mt-0.5">
                     Waiting for cards...
               </div>
                 )}
             </div>
 
-              <div className="flex-none w-52 bg-black/50 p-4 rounded-lg">
-                <div className="text-white text-sm font-bold">Blinds</div>
-                <div className="flex items-center gap-4 mt-1">
-                  <div>
-                    <span className="text-gray-400 text-xs">CURRENT</span>
-                    <div className="text-yellow-400 text-lg font-bold">{smallBlind}/{bigBlind}</div>
-                  </div>
-                  {gameState?.status !== 'waiting' && (
-                    <div>
-                      <span className="text-gray-400 text-xs">NEXT</span>
-                      <div className="text-yellow-400 text-lg font-bold">{smallBlind * 2}/{bigBlind * 2}</div>
-                    </div>
-                  )}
+            {/* Blinds Display */}
+            <div className="h-full flex-none w-[15%] min-w-[80px] bg-black/50 p-1 rounded-lg flex flex-col">
+              <div className="text-white text-[8px] sm:text-sm font-bold">Blinds</div>
+              <div className="flex items-center gap-0.5 mt-0.5">
+                <div>
+                  <span className="text-gray-400 text-[6px] sm:text-xs">CURRENT</span>
+                  <div className="text-yellow-400 text-[10px] sm:text-lg font-bold">{smallBlind}/{bigBlind}</div>
                 </div>
                 {gameState?.status !== 'waiting' && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <div className="text-gray-400 text-xs">
-                      next<br />level
-                    </div>
-                    <div className="text-2xl font-bold text-yellow-400 tabular-nums">
-                      {formatTime(nextLevelIn)}
-                    </div>
+                  <div>
+                    <span className="text-gray-400 text-[6px] sm:text-xs">NEXT</span>
+                    <div className="text-yellow-400 text-[10px] sm:text-lg font-bold">{smallBlind * 2}/{bigBlind * 2}</div>
                   </div>
                 )}
               </div>
+              {gameState?.status !== 'waiting' && (
+                <div className="mt-0.5 flex items-center gap-0.5">
+                  <div className="text-gray-400 text-[6px] sm:text-xs">
+                    next<br />level
+                  </div>
+                  <div className="text-[10px] sm:text-2xl font-bold text-yellow-400 tabular-nums">
+                    {formatTime(nextLevelIn)}
+                  </div>
+                </div>
+              )}
+            </div>
 
-            <div className="flex-1 flex flex-col gap-3 items-end">
-              <div className="flex items-center gap-3">
+            {/* Action Panel */}
+            <div className="flex-1 h-full flex flex-col justify-between gap-1">
+              {/* Main Action Buttons */}
+              <div className="flex items-center gap-1 h-1/2">
                 <button
                   onClick={() => handleAction('fold')}
-                  className="bg-red-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-red-700 transition-colors border border-white"
+                  className="flex-1 bg-red-600 text-white h-full py-0.5 rounded text-[8px] sm:text-base font-bold hover:bg-red-700 transition-colors border border-white"
                 >
                   FOLD
                 </button>
@@ -1079,7 +1086,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                     return (
                 <button
                         onClick={() => handleAction(canCheck ? 'check' : 'call')}
-                  className="bg-blue-600 text-white w-[8.5rem] py-4 rounded text-base font-bold hover:bg-blue-700 transition-colors border border-white"
+                  className="flex-1 bg-blue-600 text-white h-full py-0.5 rounded text-[8px] sm:text-base font-bold hover:bg-blue-700 transition-colors border border-white"
                 >
                         {canCheck ? 'CHECK' : 'CALL'}
                 </button>
@@ -1098,7 +1105,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                           canRaise 
                             ? 'bg-green-600 hover:bg-green-700' 
                             : 'bg-gray-600 cursor-not-allowed'
-                        } text-white w-[8.5rem] py-4 rounded text-base font-bold transition-colors flex items-center justify-center gap-2 border border-white`}
+                        } flex-1 text-white h-full py-0.5 rounded text-[8px] sm:text-base font-bold transition-colors flex items-center justify-center gap-0.5 border border-white`}
                       >
                         <span>{currentBet === 0 ? 'BET' : 'RAISE'}</span>
                   <span>{betAmount || currentBet * 2}</span>
@@ -1107,8 +1114,9 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                   })()}
               </div>
 
-              <div className="flex items-center gap-3">
-                  <div className={`flex gap-3 w-[8.5rem] ${
+              {/* Bet Controls */}
+              <div className="flex items-center gap-1 h-1/2">
+                  <div className={`flex gap-0.5 flex-1 ${
                     (() => {
                       const playerState = playersState.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
@@ -1117,18 +1125,18 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                   }`}>
                   <button
                     onClick={() => handleBetSize('half')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    className="flex-1 bg-gray-700 text-white h-full py-0.5 rounded text-[6px] sm:text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
                   >
                     1/2
                   </button>
                   <button
                     onClick={() => handleBetSize('twoThirds')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    className="flex-1 bg-gray-700 text-white h-full py-0.5 rounded text-[6px] sm:text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
                   >
                     2/3
                   </button>
                 </div>
-                  <div className={`flex gap-3 w-[8.5rem] ${
+                  <div className={`flex gap-0.5 flex-1 ${
                     (() => {
                       const playerState = playersState.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
@@ -1137,18 +1145,18 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                   }`}>
                   <button
                     onClick={() => handleBetSize('pot')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    className="flex-1 bg-gray-700 text-white h-full py-0.5 rounded text-[6px] sm:text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
                   >
                     POT
                   </button>
                   <button
                     onClick={() => handleBetSize('allin')}
-                    className="bg-gray-700 text-white w-16 py-2 rounded text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
+                    className="flex-1 bg-gray-700 text-white h-full py-0.5 rounded text-[6px] sm:text-[11px] font-bold hover:bg-gray-600 transition-colors border border-green-500"
                   >
                     ALL IN
                   </button>
                 </div>
-                  <div className={`flex items-center gap-2 w-[8.5rem] ${
+                  <div className={`flex items-center gap-0.5 flex-1 ${
                     (() => {
                       const playerState = playersState.find(p => p.id === initialPlayer?.id);
                       const minRaiseAmount = currentBet > 0 ? currentBet + minBet : minBet;
@@ -1157,7 +1165,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                   }`}>
                   <button
                     onClick={() => handleBetChange('decrease')}
-                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                    className="w-4 h-4 sm:w-8 sm:h-8 bg-gray-700 text-white rounded-full text-[6px] sm:text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
                   >
                     -
                   </button>
@@ -1165,12 +1173,12 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
                     type="number"
                     value={betAmount}
                     onChange={(e) => handleBetInput(e.target.value)}
-                    className="w-20 px-3 py-2 bg-white text-black text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="flex-1 px-0.5 sm:px-3 py-0.5 sm:py-2 bg-white text-black text-[6px] sm:text-sm text-center font-bold border border-gray-300 rounded focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     placeholder={`${currentBet * 2}`}
                   />
                   <button
                     onClick={() => handleBetChange('increase')}
-                    className="bg-gray-700 text-white w-8 h-8 rounded-full text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
+                    className="w-4 h-4 sm:w-8 sm:h-8 bg-gray-700 text-white rounded-full text-[6px] sm:text-sm font-bold hover:bg-gray-600 transition-colors flex items-center justify-center border border-green-500"
                   >
                     +
                   </button>
@@ -1180,7 +1188,8 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
           </div>
         </div>
 
-          <div className="w-80 h-full flex flex-col bg-gray-900 rounded-lg">
+        {/* Chat Area - 30% */}
+        <div className="flex-[0.3] flex flex-col bg-gray-900 rounded-lg">
           <div className="flex-none p-3 border-b border-gray-700 flex items-center justify-center gap-6">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400 font-medium tracking-wide">GLOBAL</span>

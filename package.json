@@ -10,6 +10,8 @@
     "ws": "ts-node -r tsconfig-paths/register -P tsconfig.server.json src/server/websocket.ts"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.0",
+    "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.5.0",
     "@types/ws": "^8.18.0",
     "@vercel/postgres": "^0.10.0",
