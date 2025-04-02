@@ -3,6 +3,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { WebSocketProvider } from '@/lib/poker/WebSocketContext';
+import RotateScreen from '@/components/RotateScreen';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,10 +22,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <WebSocketProvider>
+          <RotateScreen />
           {children}
         </WebSocketProvider>
       </body>
