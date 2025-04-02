@@ -133,8 +133,10 @@ export default function TableUpdatePage() {
 
                     {/* Timer */}
                     <div>
-                      <span className="text-white uppercase tracking-wider font-medium block text-[1vw]">Next level</span>
-                      <div className="text-yellow-400 font-semibold text-[1.2vw]">10:00</div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-white uppercase tracking-wider font-medium text-[1vw]">Next level</span>
+                        <span className="text-yellow-400 font-semibold text-[1.2vw]">- 10:00</span>
+                      </div>
                     </div>
                   </div>
                 </div>
