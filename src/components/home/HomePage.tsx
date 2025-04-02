@@ -110,20 +110,20 @@ export default function HomePage() {
         <div className="grid grid-cols-3 gap-1.5 xs:gap-2 sm:gap-3 md:gap-4 lg:gap-6 h-full py-1.5 xs:py-2 sm:py-3 md:py-4 lg:py-6">
           <Link href="/tournament/dev-tournament" className="group">
             <div className="bg-gray-800 rounded p-1.5 xs:p-2 sm:p-3 md:p-4 lg:p-6 border border-gray-700 hover:border-green-500 transition-all h-full">
-              <h3 className="text-xxs xs:text-xs sm:text-sm md:text-base lg:text-lg font-bold text-green-400 mb-0.5 xs:mb-1 sm:mb-1.5 md:mb-2">Dev-test Tournament</h3>
-              <p className="text-xxxs xs:text-xxs sm:text-xs md:text-sm lg:text-base text-gray-400 leading-snug">Test and practice your poker skills.</p>
+              <h3 className="text-xxs xs:text-xs sm:text-sm md:text-3xl lg:text-4xl font-bold text-green-400 mb-0.5 xs:mb-1 sm:mb-1.5 md:mb-2">Dev-test Tournament</h3>
+              <p className="text-xxxs xs:text-xxs sm:text-xs md:text-xl lg:text-2xl text-gray-400 leading-snug">Test and practice your poker skills.</p>
             </div>
           </Link>
           <Link href="/sit-n-go" className="group">
             <div className="bg-gray-800 rounded p-1.5 xs:p-2 sm:p-3 md:p-4 lg:p-6 border border-gray-700 hover:border-yellow-500 transition-all h-full">
-              <h3 className="text-xxs xs:text-xs sm:text-sm md:text-base lg:text-lg font-bold text-yellow-400 mb-0.5 xs:mb-1 sm:mb-1.5 md:mb-2">Sit n' Goes</h3>
-              <p className="text-xxxs xs:text-xxs sm:text-xs md:text-sm lg:text-base text-gray-400 leading-snug">Quick games that start as soon as enough players join.</p>
+              <h3 className="text-xxs xs:text-xs sm:text-sm md:text-3xl lg:text-4xl font-bold text-yellow-400 mb-0.5 xs:mb-1 sm:mb-1.5 md:mb-2">Sit n' Goes</h3>
+              <p className="text-xxxs xs:text-xxs sm:text-xs md:text-xl lg:text-2xl text-gray-400 leading-snug">Quick games that start as soon as enough players join.</p>
             </div>
           </Link>
           <Link href="/tournaments" className="group">
             <div className="bg-gray-800 rounded p-1.5 xs:p-2 sm:p-3 md:p-4 lg:p-6 border border-gray-700 hover:border-blue-500 transition-all h-full">
-              <h3 className="text-xxs xs:text-xs sm:text-sm md:text-base lg:text-lg font-bold text-blue-400 mb-0.5 xs:mb-1 sm:mb-1.5 md:mb-2">Tournaments</h3>
-              <p className="text-xxxs xs:text-xxs sm:text-xs md:text-sm lg:text-base text-gray-400 leading-snug">Compete in scheduled tournaments.</p>
+              <h3 className="text-xxs xs:text-xs sm:text-sm md:text-3xl lg:text-4xl font-bold text-blue-400 mb-0.5 xs:mb-1 sm:mb-1.5 md:mb-2">Tournaments</h3>
+              <p className="text-xxxs xs:text-xxs sm:text-xs md:text-xl lg:text-2xl text-gray-400 leading-snug">Compete in scheduled tournaments.</p>
             </div>
           </Link>
         </div>
