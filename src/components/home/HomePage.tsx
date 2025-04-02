@@ -88,7 +88,7 @@ export default function HomePage() {
                 <path fillRule="evenodd" clipRule="evenodd" fill="#36343A" d="M400.257,942.068h424.957c15.027,0,27.316,12.278,27.316,27.316v16.759c0,5.801-4.748,10.557-10.553,10.557h-460.32c-4.796,0-8.72-3.924-8.72-8.71v-18.606C372.938,954.346,385.234,942.068,400.257,942.068z"/>
               </g>
               {/* Screen Content Container */}
-              <foreignObject x="120" y="248" width="952" height="532">
+              <foreignObject x="108.611" y="236.892" width="975.328" height="554.872">
                 <div className="w-full h-full relative overflow-hidden rounded">
                   <Image
                     src="/Screenshot 2025-03-31 at 17.58.10.png"
