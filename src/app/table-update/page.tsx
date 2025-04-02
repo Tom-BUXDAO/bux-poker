@@ -32,6 +32,54 @@ export default function TableUpdatePage() {
           <div className="flex-1 bg-gray-800 relative min-h-0">
             {/* Game table content will go here */}
             <div className="absolute inset-[10%] rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
+              {/* First Seat */}
+              <div className="absolute -top-[5%] left-1/4 -translate-x-1/2">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Second Seat */}
+              <div className="absolute -top-[5%] right-1/4 translate-x-1/2">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Third Seat (Right Top) */}
+              <div className="absolute -right-[5%] top-1/4 translate-y-[-50%]">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Fourth Seat (Right Bottom) */}
+              <div className="absolute -right-[5%] bottom-1/4 translate-y-[50%]">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Fifth Seat */}
+              <div className="absolute -bottom-[5%] left-1/4 -translate-x-1/2">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Sixth Seat */}
+              <div className="absolute -bottom-[5%] right-1/4 translate-x-1/2">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Seventh Seat (Left Bottom) */}
+              <div className="absolute -left-[5%] bottom-1/4 translate-y-[50%]">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
+              {/* Eighth Seat (Left Top) */}
+              <div className="absolute -left-[5%] top-1/4 translate-y-[-50%]">
+                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
+                </div>
+              </div>
               {/* Table content */}
             </div>
           </div>
