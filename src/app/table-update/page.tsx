@@ -1,24 +1,155 @@
 'use client';
 
-import React from 'react';
-import { Switch } from '@headlessui/react';
-import EmojiPicker from 'emoji-picker-react';
-import { FaceSmileIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
-import { FaceSmileIcon as FaceSmileSolidIcon } from '@heroicons/react/24/solid';
+import React, { useState, useEffect } from 'react';
+import { useWebSocket } from '@/lib/poker/WebSocketContext';
+import { Card } from '@/types/poker';
+import PlayerAvatar from '@/components/poker/PlayerAvatar';
+import ChatPanel from '@/components/poker/ChatPanel';
+import ActionPanel from '@/components/poker/ActionPanel';
+import ChipStack from '@/components/poker/ChipStack';
+import PotDisplay from '@/components/poker/PotDisplay';
+import '../text-sizes.css';
+
+const AVATAR_URLS = [
+  'https://nftstorage.link/ipfs/bafybeigo7gili5wuojsywuwoift34g6mvvq56lrbk3ikp7r365a23es7je/4.png',
+  'https://arweave.net/Le-ulCph8DnrDX8F58wZiYuRAUJHyuAHDc3qL427QG0',
+  'https://nftstorage.link/ipfs/bafybeih2d34omtz2uoi6j56goy6y5ix6rydnpxylwlxcqhatpuvnobcecy/589.png',
+  'https://arweave.net/y5aIwHvJWbXmm-faBK5x1UW-wBV8cmFRL18yfSy3cqk',
+  'https://nftstorage.link/ipfs/bafybeiesjpaxqfxnsaugmwmzyldfsku2rp3vcpudbfmaovxcg4k2orep54/62.png',
+  'https://arweave.net/lN9F3yXRsIIrEwP9TPKNAC27DE_j8CnhOQ6rUYTYKjM',
+  'https://nftstorage.link/ipfs/bafybeiaiytmqc6dsko33hs2sylqizbl3hqw3liwuzvfi34uua6556erpb4/47.png',
+  'https://arweave.net/dNT1LK37y22CFgs-e2uX5AmJ2G9NBAb1xORT9P_wyiE?ext=png'
+];
+
+interface ChatMessage {
+  playerId: string;
+  message: string;
+  timestamp: Date;
+}
+
+// Add this type for seat positions
+interface Seat {
+  position: string;
+  player?: any;
+}
+
+// Add this CSS for card and player animations
+const tableStyles = `
+  @keyframes dealCard {
+    from {
+      transform: translate(-50%, -50%) scale(0.5);
+      opacity: 0;
+    }
+    to {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes pulse-border {
+    0% { border-color: rgba(234, 179, 8, 0.8); }
+    50% { border-color: rgba(234, 179, 8, 0.4); }
+    100% { border-color: rgba(234, 179, 8, 0.8); }
+  }
+
+  .active-player {
+    border-width: 3px;
+    animation: pulse-border 0.8s ease-in-out infinite;
+  }
+
+  .dealt-card {
+    animation: dealCard 0.3s ease-out forwards;
+  }
+`;
 
 export default function TableUpdatePage() {
-  const [showEmojis, setShowEmojis] = React.useState(false);
-  const [showChat, setShowChat] = React.useState(true);
-  const [showSystem, setShowSystem] = React.useState(true);
-  const [message, setMessage] = React.useState('');
+  const ws = useWebSocket();
+  const [players, setPlayers] = useState<any[]>([]);
+  const [communityCards, setCommunityCards] = useState<Card[]>([]);
+  const [pot, setPot] = useState(0);
+  const [currentBet, setCurrentBet] = useState(0);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isStarted, setIsStarted] = useState(false);
+  const minBet = 20;
 
-  const handleEmojiClick = (emojiData: any) => {
-    setMessage(prev => prev + emojiData.emoji);
-    setShowEmojis(false);
+  // Initialize WebSocket connection
+  useEffect(() => {
+    const tableId = 'dev-tournament';
+    const playerId = 'tom_buxdao';
+    
+    // Only connect if not already connected
+    if (!ws.isConnected) {
+      console.log('Connecting to WebSocket:', { tableId, playerId });
+      ws.connect(tableId, playerId, {
+        name: 'tom',
+        chips: 1000
+      });
+    }
+
+    // Set up event handlers
+    const handleGameState = (data: any) => {
+      console.log('Received game state:', data);
+      if (!data || !data.type) return;
+      
+      if (data.type === 'gameState') {
+        const gameState = data.payload;
+        setPlayers(gameState.players || []);
+        setCommunityCards(gameState.communityCards || []);
+        setPot(gameState.pot || 0);
+        setCurrentBet(gameState.currentBet || 0);
+        if (gameState.status === 'playing') {
+          setIsStarted(true);
+        }
+      } else if (data.type === 'chat') {
+        setChatMessages(prev => [...prev, {
+          playerId: data.payload.playerId,
+          message: data.payload.message,
+          timestamp: new Date(data.payload.timestamp)
+        }]);
+      }
+    };
+
+    // Subscribe to events
+    ws.on('message', handleGameState);
+
+    // Cleanup function
+    return () => {
+      if (ws.isConnected) {
+        console.log('Cleaning up WebSocket connection');
+        ws.off('message', handleGameState);
+      }
+    };
+  }, [ws.isConnected]);
+
+  const handleAction = (action: string, amount?: number) => {
+    ws.sendMessage({
+      type: 'action',
+      payload: {
+        action,
+        amount
+      }
+    });
   };
+
+  const handleSendMessage = (message: string) => {
+    ws.sendMessage({
+      type: 'chat',
+      payload: {
+        message
+      }
+    });
+  };
+
+  // Create array of 8 seats with positions
+  const seats: Seat[] = Array(8).fill(null).map((_, index) => ({
+    position: getPlayerPosition(index),
+    player: players.find((p, pIndex) => pIndex === index)
+  }));
 
   return (
     <div className="min-h-screen h-screen flex flex-col overflow-hidden">
+      <style jsx global>{tableStyles}</style>
+      
       {/* Header */}
       <div className="h-10 min-h-[2.5rem] bg-gray-900 border-b border-gray-800 flex items-center px-3">
         <h1 className="text-white font-bold text-base">BUX Poker</h1>
@@ -30,270 +161,115 @@ export default function TableUpdatePage() {
         <div className="w-[70%] flex flex-col min-h-0">
           {/* Game Table - Fills available space */}
           <div className="flex-1 bg-gray-800 relative min-h-0">
-            {/* Game table content will go here */}
             <div className="absolute inset-[10%] rounded-3xl bg-[#1a6791] [background:radial-gradient(circle,#1a6791_0%,#14506e_70%,#0d3b51_100%)] border-2 border-[#d88a2b]">
-              {/* First Seat */}
-              <div className="absolute -top-[5%] left-1/4 -translate-x-1/2">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Second Seat */}
-              <div className="absolute -top-[5%] right-1/4 translate-x-1/2">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Third Seat (Right Top) */}
-              <div className="absolute -right-[5%] top-1/4 translate-y-[-50%]">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Fourth Seat (Right Bottom) */}
-              <div className="absolute -right-[5%] bottom-1/4 translate-y-[50%]">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Fifth Seat */}
-              <div className="absolute -bottom-[5%] left-1/4 -translate-x-1/2">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Sixth Seat */}
-              <div className="absolute -bottom-[5%] right-1/4 translate-x-1/2">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Seventh Seat (Left Bottom) */}
-              <div className="absolute -left-[5%] bottom-1/4 translate-y-[50%]">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Eighth Seat (Left Top) */}
-              <div className="absolute -left-[5%] top-1/4 translate-y-[-50%]">
-                <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
-                  <span className="text-gray-400 font-medium text-[0.65vw]">EMPTY</span>
-                </div>
-              </div>
-              {/* Table content */}
-            </div>
-          </div>
-
-          {/* Control Panel - Fixed height */}
-          <div className="h-[30%] min-h-0 bg-gray-900 p-2">
-            <div className="h-full py-2 flex items-center gap-2">
-              {/* Left Container - Cards and Info */}
-              <div className="w-1/2 flex gap-2">
-                {/* Cards Section */}
-                <div className="h-full flex items-center justify-start gap-2 w-[45%]">
-                  <div className="h-full w-[45%] relative">
-                    <img 
-                      src="/cards/AS.png"
-                      alt="Ace of Spades"
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
-                  <div className="h-full w-[45%] relative">
-                    <img 
-                      src="/cards/KH.png"
-                      alt="King of Hearts"
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
-                </div>
-
-                {/* Game Info Tile */}
-                <div className="w-[55%] bg-black/50 rounded p-1">
-                  <div className="h-full flex flex-col justify-between">
-                    {/* Best Hand */}
-                    <div>
-                      <span className="text-white uppercase tracking-wider font-medium block text-[0.8vw]">Best hand</span>
-                      <div className="text-yellow-400 font-semibold text-[1vw]">Waiting for cards...</div>
-                    </div>
-
-                    {/* Blinds */}
-                    <div>
-                      <span className="text-white uppercase tracking-wider font-medium block text-[0.8vw]">Blinds</span>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <span className="text-gray-400 text-[0.8vw]">Current</span>
-                          <span className="text-white font-semibold text-[1vw]">10/20</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-gray-400 text-[0.8vw]">Next</span>
-                          <span className="text-white font-semibold text-[1vw]">20/40</span>
-                        </div>
+              {/* Seats */}
+              {seats.map((seat, index) => (
+                <div key={index} className={`absolute ${seat.position}`}>
+                  {seat.player ? (
+                    <>
+                      {/* Player Info Container */}
+                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 px-3 py-1.5 rounded-sm border border-gray-700 whitespace-nowrap">
+                        <span className="text-white text-scale-base text-scale-bold tracking-wide">{seat.player.name}</span>
+                        <span className="text-yellow-400 text-scale-base text-scale-bold ml-3 tracking-wide">{seat.player.chips.toLocaleString()}</span>
                       </div>
-                    </div>
-
-                    {/* Timer */}
-                    <div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-white uppercase tracking-wider font-medium text-[0.8vw]">Next level</span>
-                        <span className="text-yellow-400 font-semibold text-[1vw]">- 10:00</span>
+                      {/* Player Avatar */}
+                      <div className={`w-[4.5vw] h-[4.5vw] rounded-full overflow-hidden border-2 bg-gray-800/90 
+                        ${seat.player.isCurrent ? 'border-yellow-500 active-player' : 'border-gray-700'}`}>
+                        <img
+                          src={AVATAR_URLS[index % AVATAR_URLS.length]}
+                          alt={seat.player.name}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
+                      {/* Player's Current Bet */}
+                      {seat.player.currentBet > 0 && (
+                        <ChipStack
+                          amount={seat.player.currentBet}
+                          position={getChipPosition(index)}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    // Empty Seat
+                    <div className="w-[4.5vw] h-[4.5vw] rounded-full bg-gray-800/90 flex items-center justify-center border-2 border-gray-700">
+                      <span className="text-gray-400 text-scale-base">EMPTY</span>
                     </div>
-                  </div>
+                  )}
                 </div>
-              </div>
-
-              {/* Right Container - Action Buttons */}
-              <div className="w-1/2 h-full flex items-center gap-2">
-                {/* Fold Column */}
-                <div className="flex-1 h-full flex flex-col gap-2">
-                  <div className="h-[65%]">
-                    <button className="h-full w-full bg-red-600 hover:bg-red-700 text-white font-bold rounded uppercase tracking-wider text-sm lg:text-base border border-white">
-                      Fold
-                    </button>
-                  </div>
-                  <div className="h-[30%] flex gap-2">
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
-                      1/2
-                    </button>
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
-                      2/3
-                    </button>
-                  </div>
-                </div>
-
-                {/* Check/Call Column */}
-                <div className="flex-1 h-full flex flex-col gap-2">
-                  <div className="h-[65%]">
-                    <button className="h-full w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded uppercase tracking-wider text-sm lg:text-base border border-white">
-                      Check
-                    </button>
-                  </div>
-                  <div className="h-[30%] flex gap-2">
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
-                      POT
-                    </button>
-                    <button className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white font-medium rounded text-xs lg:text-sm border border-green-500">
-                      ALL IN
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bet/Raise Column */}
-                <div className="flex-1 h-full flex flex-col gap-2">
-                  <div className="h-[65%]">
-                    <button className="h-full w-full bg-green-600 hover:bg-green-700 text-white font-bold rounded uppercase tracking-wider text-sm lg:text-base border border-white">
-                      Bet 0
-                    </button>
-                  </div>
-                  <div className="h-[30%] grid grid-cols-3 gap-2">
-                    <button className="h-full bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-xs lg:text-sm border border-green-500">
-                      -
-                    </button>
-                    <input 
-                      type="text" 
-                      className="h-full bg-gray-800 text-white text-center rounded text-xs lg:text-sm border border-green-500"
-                      value="0"
-                      readOnly
+              ))}
+              
+              {/* Community Cards */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex gap-2">
+                {communityCards.map((card, index) => (
+                  <div 
+                    key={index} 
+                    className="w-[3vw] h-[4.2vw] relative dealt-card"
+                    style={{ animationDelay: `${index * 0.1}s` }}
+                  >
+                    <img
+                      src={`/cards/${card.rank}${card.suit}.png`}
+                      alt={`${card.rank} of ${card.suit}`}
+                      className="w-full h-full object-contain"
                     />
-                    <button className="h-full bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-xs lg:text-sm border border-green-500">
-                      +
-                    </button>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                ))}
         </div>
 
-        {/* Chat Area - 30% */}
-        <div className="w-[30%] bg-gray-900 border-l border-gray-800 flex flex-col min-h-0">
-          {/* Chat Header */}
-          <div className="flex-none p-2 border-b border-gray-800">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1">
-                <span className="text-gray-400 text-sm uppercase tracking-wider font-medium">Chat</span>
-                <Switch
-                  checked={showChat}
-                  onChange={setShowChat}
-                  className={`${
-                    showChat ? 'bg-blue-600' : 'bg-gray-700'
-                  } relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none`}
-                >
-                  <span
-                    className={`${
-                      showChat ? 'translate-x-4' : 'translate-x-1'
-                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
-                  />
-                </Switch>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-gray-400 text-sm uppercase tracking-wider font-medium">System</span>
-                <Switch
-                  checked={showSystem}
-                  onChange={setShowSystem}
-                  className={`${
-                    showSystem ? 'bg-orange-600' : 'bg-gray-700'
-                  } relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none`}
-                >
-                  <span
-                    className={`${
-                      showSystem ? 'translate-x-4' : 'translate-x-1'
-                    } inline-block h-3 w-3 transform rounded-full bg-white transition-transform`}
-                  />
-                </Switch>
+              {/* Pot Display */}
+              <div className="absolute top-[40%] left-1/2 transform -translate-x-1/2 text-white text-scale-lg text-scale-bold">
+                Total Pot: {pot}
               </div>
             </div>
           </div>
 
-          {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-2 min-h-0">
-            {/* Messages will go here */}
-          </div>
-
-          {/* Chat Input */}
-          <div className="flex-none p-2 border-t border-gray-800">
-            <div className="relative flex gap-2">
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type a message..."
-                  className="w-full bg-gray-800 text-white rounded-lg pl-3 pr-16 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <button
-                    onClick={() => setShowEmojis(!showEmojis)}
-                    className="text-yellow-500 hover:text-yellow-400"
-                  >
-                    <FaceSmileSolidIcon className="w-5 h-5" />
-                  </button>
-                  <button 
-                    className="text-blue-500 hover:text-blue-400"
-                    onClick={() => {
-                      if (message.trim()) {
-                        // Handle send message
-                        setMessage('');
-                      }
-                    }}
-                  >
-                    <PaperAirplaneIcon className="w-5 h-5" />
-                  </button>
-                </div>
-                {showEmojis && (
-                  <div className="absolute bottom-full right-0 mb-2">
-                    <EmojiPicker
-                      onEmojiClick={handleEmojiClick}
-                      width={250}
-                      height={350}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* Action Panel */}
+          <ActionPanel
+            currentBet={currentBet}
+            pot={pot}
+            minBet={minBet}
+            onAction={handleAction}
+            playerCards={players.find(p => p.id === 'tom_buxdao')?.cards || []}
+            communityCards={communityCards}
+          />
         </div>
+
+        {/* Chat Panel */}
+        <ChatPanel
+          messages={chatMessages}
+          currentPlayerId="tom_buxdao"
+          onSendMessage={handleSendMessage}
+        />
       </div>
     </div>
   );
+}
+
+// Helper function to get player position classes
+function getPlayerPosition(index: number): string {
+  const positions = [
+    '-top-[5%] left-1/4 -translate-x-1/2',
+    '-top-[5%] right-1/4 translate-x-1/2',
+    '-right-[5%] top-1/4 translate-y-[-50%]',
+    '-right-[5%] bottom-1/4 translate-y-[50%]',
+    '-bottom-[5%] right-1/4 translate-x-1/2',
+    '-bottom-[5%] left-1/4 -translate-x-1/2',
+    '-left-[5%] bottom-1/4 translate-y-[50%]',
+    '-left-[5%] top-1/4 translate-y-[-50%]'
+  ];
+  return positions[index % positions.length];
+}
+
+// Helper function to get chip position classes
+function getChipPosition(index: number): string {
+  const positions = [
+    'bottom-[-2rem] left-1/2 -translate-x-1/2',  // Top players
+    'bottom-[-2rem] left-1/2 -translate-x-1/2',
+    'left-[-3rem] top-1/2 -translate-y-1/2',     // Right players
+    'left-[-3rem] top-1/2 -translate-y-1/2',
+    'top-[-2rem] left-1/2 -translate-x-1/2',     // Bottom players
+    'top-[-2rem] left-1/2 -translate-x-1/2',
+    'right-[-3rem] top-1/2 -translate-y-1/2',    // Left players
+    'right-[-3rem] top-1/2 -translate-y-1/2'
+  ];
+  return positions[index % positions.length];
 } 

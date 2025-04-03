@@ -26,6 +26,19 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   const connect = (tableId: string, playerId: string, playerData: { name: string; chips: number }) => {
     try {
+      // Check if already connected to the same table/player
+      if (isConnected && 
+          connectionRef.current.tableId === tableId && 
+          connectionRef.current.playerId === playerId) {
+        console.log('Already connected to this table/player');
+        return;
+      }
+
+      // If connected to a different table/player, disconnect first
+      if (isConnected) {
+        disconnect();
+      }
+
       console.log('WebSocket context: connecting with', { tableId, playerId, playerData });
       
       // Store connection info
@@ -49,6 +62,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = () => {
     try {
+      if (!isConnected) return;
+
       console.log('WebSocket context: disconnecting');
       wsRef.current.cleanup();
       setIsConnected(false);

@@ -1,3 +1,6 @@
+'use client';
+
+import React from 'react';
 import Image from 'next/image';
 import { TablePosition } from '@/types/poker';
 
@@ -19,54 +22,54 @@ const getChipColor = (value: number): string => {
 
 interface ChipStackProps {
   amount: number;
-  position: TablePosition;
+  position?: string;
 }
 
-const ChipStack: React.FC<ChipStackProps> = ({ amount, position }) => {
-  // Determine chip position based on seat position
-  const getChipPosition = () => {
-    switch (position) {
-      case 1: // Top left
-      case 2: // Top right
-        return 'absolute -bottom-24 left-1/2 transform -translate-x-1/2 flex items-center gap-2';
-      case 3: // Right top
-        return 'absolute -bottom-14 -left-24 flex flex-row-reverse items-center gap-2';
-      case 4: // Right bottom
-        return 'absolute -top-14 -left-24 flex flex-row-reverse items-center gap-2';
-      case 5: // Bottom right
-      case 6: // Bottom left
-        return 'absolute -top-24 left-1/2 transform -translate-x-1/2 flex items-center gap-2';
-      case 7: // Left bottom
-        return 'absolute -top-14 -right-24 flex items-center gap-2';
-      case 8: // Left top
-        return 'absolute -bottom-14 -right-24 flex items-center gap-2';
-    }
+export default function ChipStack({ amount, position = '' }: ChipStackProps) {
+  if (amount <= 0) return null;
+
+  const chipColors = {
+    1000: 'bg-orange-500',
+    500: 'bg-purple-500',
+    100: 'bg-black',
+    25: 'bg-green-600',
+    5: 'bg-red-600',
+    1: 'bg-blue-600'
   };
 
-  // Find the highest value chip that fits in the amount
-  const getChipValue = (amount: number) => {
-    const chipValues = [10000, 5000, 1000, 500, 200, 100, 50, 20, 10];
-    return chipValues.find(value => value <= amount) || 10;
+  const getChips = (amount: number) => {
+    const chips: { value: number; count: number }[] = [];
+    let remaining = amount;
+
+    [1000, 500, 100, 25, 5, 1].forEach(value => {
+      const count = Math.floor(remaining / value);
+      if (count > 0) {
+        chips.push({ value, count });
+        remaining %= value;
+      }
+    });
+
+    return chips;
   };
 
-  const chipValue = getChipValue(amount);
+  const chips = getChips(amount);
 
   return (
-    <div className={getChipPosition()}>
-      <div className={`relative w-6 h-6 rounded-full ${getChipColor(chipValue)} flex items-center justify-center`}>
-        <Image
-          src="/poker-chip.svg"
-          alt="Poker chip"
-          width={24}
-          height={24}
-          className="opacity-90 brightness-200"
-        />
-      </div>
-      <div className="bg-black/50 px-2 py-1 rounded-full text-yellow-400 text-xs font-bold">
-        {amount}
+    <div className={`absolute ${position} flex flex-col-reverse items-center`}>
+      <div className="text-white text-sm font-bold mt-1">{amount}</div>
+      <div className="relative w-6 h-8">
+        {chips.map(({ value, count }, index) => (
+          <div
+            key={value}
+            className={`absolute w-6 h-2 rounded-full border border-white/50 ${chipColors[value as keyof typeof chipColors]}`}
+            style={{
+              bottom: `${index * 4}px`,
+              transform: 'translateZ(0)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+            }}
+          />
+        ))}
       </div>
     </div>
   );
-};
-
-export default ChipStack; 
+} 

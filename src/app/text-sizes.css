@@ -32,4 +32,28 @@
     -webkit-text-size-adjust: none;
     font-size: 12px !important;
   }
+}
+
+/* Text scaling classes */
+.text-scale-base {
+  font-size: clamp(0.65vw, 14px, 1vw);
+}
+
+.text-scale-lg {
+  font-size: clamp(0.8vw, 16px, 1.2vw);
+}
+
+.text-scale-xl {
+  font-size: clamp(1vw, 18px, 1.4vw);
+}
+
+/* Font weights */
+.text-scale-base,
+.text-scale-lg,
+.text-scale-xl {
+  font-weight: 500;
+}
+
+.text-scale-bold {
+  font-weight: 700;
 } 

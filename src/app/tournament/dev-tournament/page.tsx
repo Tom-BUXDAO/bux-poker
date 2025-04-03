@@ -29,7 +29,7 @@ const AVATAR_URLS = [
 
 const INITIAL_PLAYERS: Player[] = [
   { id: '1', name: 'laura', chips: 1000, avatar: AVATAR_URLS[0] },
-  { id: '2', name: 'tom', chips: 1000, avatar: AVATAR_URLS[1] },
+  { id: 'tom_buxdao', name: 'tom', chips: 1000, avatar: AVATAR_URLS[1] },
   { id: '3', name: 'alice', chips: 1000, avatar: AVATAR_URLS[2] },
   { id: '4', name: 'bob', chips: 1000, avatar: AVATAR_URLS[3] },
   { id: '5', name: 'charlie', chips: 1000, avatar: AVATAR_URLS[4] },
