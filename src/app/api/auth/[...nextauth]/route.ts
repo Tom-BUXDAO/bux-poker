@@ -4,7 +4,15 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+interface DiscordProfile {
+  id: string;
+  username: string;
+  avatar: string | null;
+  email?: string;
+}
+
 const handler = NextAuth({
+  debug: true,
   providers: [
     DiscordProvider({
       clientId: process.env.DISCORD_CLIENT_ID!,
@@ -18,19 +26,21 @@ const handler = NextAuth({
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-      if (account?.provider === 'discord') {
+      console.log('SignIn callback:', { user, account, profile });
+      if (account?.provider === 'discord' && profile) {
+        const discordProfile = profile as DiscordProfile;
         try {
           // Create or update player record
           await prisma.player.upsert({
-            where: { discordId: profile.id },
+            where: { discordId: discordProfile.id },
             update: {
-              discordUsername: profile.username,
-              avatarUrl: profile.avatar ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png` : null,
+              discordUsername: discordProfile.username,
+              avatarUrl: discordProfile.avatar ? `https://cdn.discordapp.com/avatars/${discordProfile.id}/${discordProfile.avatar}.png` : null,
             },
             create: {
-              discordId: profile.id,
-              discordUsername: profile.username,
-              avatarUrl: profile.avatar ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png` : null,
+              discordId: discordProfile.id,
+              discordUsername: discordProfile.username,
+              avatarUrl: discordProfile.avatar ? `https://cdn.discordapp.com/avatars/${discordProfile.id}/${discordProfile.avatar}.png` : null,
             },
           });
           return true;
@@ -42,14 +52,17 @@ const handler = NextAuth({
       return true;
     },
     async jwt({ token, account, profile }) {
+      console.log('JWT callback:', { token, account, profile });
       if (account && profile) {
+        const discordProfile = profile as DiscordProfile;
         token.accessToken = account.access_token;
         token.tokenType = account.token_type;
-        token.id = profile.id; // Add Discord ID to token
+        token.id = discordProfile.id; // Add Discord ID to token
       }
       return token;
     },
     async session({ session, token }) {
+      console.log('Session callback:', { session, token });
       if (session.user) {
         session.user.accessToken = token.accessToken as string;
         session.user.tokenType = token.tokenType as string;
@@ -61,6 +74,19 @@ const handler = NextAuth({
   pages: {
     signIn: "/",
   },
+  useSecureCookies: true,
+  cookies: {
+    sessionToken: {
+      name: `__Secure-next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+        domain: process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).hostname : undefined
+      }
+    }
+  }
 });
 
 export { handler as GET, handler as POST }; 
