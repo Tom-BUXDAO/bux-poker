@@ -18,7 +18,7 @@ const TEST_CARDS = [
 ];
 
 export default function ActionPanel({ currentBet, pot, minBet, onAction, playerCards, communityCards }: ActionPanelProps) {
-  const [betAmount, setBetAmount] = useState('');
+  const [betAmount, setBetAmount] = useState((currentBet + minBet).toString());
   
   // Use test cards if no player cards provided
   const displayCards = playerCards.length > 0 ? playerCards : TEST_CARDS;
@@ -93,13 +93,13 @@ export default function ActionPanel({ currentBet, pot, minBet, onAction, playerC
             <div className="h-[35%] flex gap-2">
               <button 
                 onClick={() => onAction('bet', Math.floor(pot / 2))}
-                className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
+                className="flex-1 h-full min-h-[28px] bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
               >
                 1/2
               </button>
               <button 
                 onClick={() => onAction('bet', Math.floor(pot * 2 / 3))}
-                className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
+                className="flex-1 h-full min-h-[28px] bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
               >
                 2/3
               </button>
@@ -119,13 +119,13 @@ export default function ActionPanel({ currentBet, pot, minBet, onAction, playerC
             <div className="h-[35%] flex gap-2">
               <button 
                 onClick={() => onAction('bet', pot)}
-                className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
+                className="flex-1 h-full min-h-[28px] bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
               >
                 POT
               </button>
               <button 
                 onClick={() => onAction('allin')}
-                className="flex-1 h-full bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
+                className="flex-1 h-full min-h-[28px] bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
               >
                 ALL IN
               </button>
@@ -145,19 +145,19 @@ export default function ActionPanel({ currentBet, pot, minBet, onAction, playerC
             <div className="h-[35%] grid grid-cols-3 gap-2">
               <button 
                 onClick={() => setBetAmount(prev => Math.max(0, parseInt(prev || '0') - minBet).toString())}
-                className="h-full bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
+                className="h-full min-h-[28px] bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
               >
                 -
               </button>
               <input 
                 type="text" 
-                className="h-full bg-gray-800 text-white text-center text-scale-base rounded border border-green-500"
+                className="h-full min-h-[28px] bg-white text-gray-900 text-center text-scale-base rounded border border-green-500"
                 value={betAmount}
                 onChange={(e) => setBetAmount(e.target.value.replace(/\D/g, ''))}
               />
               <button 
                 onClick={() => setBetAmount(prev => (parseInt(prev || '0') + minBet).toString())}
-                className="h-full bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
+                className="h-full min-h-[28px] bg-gray-700 hover:bg-gray-600 text-white text-scale-base rounded border border-green-500"
               >
                 +
               </button>
