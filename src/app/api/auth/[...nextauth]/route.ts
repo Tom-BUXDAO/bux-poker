@@ -18,9 +18,10 @@ const handler = NextAuth({
       clientId: process.env.DISCORD_CLIENT_ID!,
       clientSecret: process.env.DISCORD_CLIENT_SECRET!,
       authorization: {
+        url: "https://discord.com/api/oauth2/authorize",
         params: {
           scope: "identify email guilds",
-          redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/discord`
+          redirect_uri: process.env.NEXTAUTH_URL ? `${process.env.NEXTAUTH_URL}/api/auth/callback/discord` : "http://localhost:3000/api/auth/callback/discord"
         }
       }
     }),
