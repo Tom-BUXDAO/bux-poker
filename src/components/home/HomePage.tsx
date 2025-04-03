@@ -3,9 +3,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { signIn, signOut, useSession } from 'next-auth/react';
+import { useState } from 'react';
+import PlayerStatsModal from '../PlayerStatsModal';
+import { ChartBarIcon } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
   const { data: session } = useSession();
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
 
   return (
     <main className="min-h-screen bg-gray-900 text-white grid grid-rows-[10vh_40vh_28vh_15vh_7vh] overflow-y-auto portrait:hidden">
@@ -32,14 +36,24 @@ export default function HomePage() {
                   src={session.user.image || '/BUX.png'} 
                   alt={session.user.name || 'User'} 
                   fill
+                  sizes="(max-width: 640px) 16px, (max-width: 768px) 20px, (max-width: 1024px) 24px, (max-width: 1280px) 32px, 40px"
                   className="rounded-full object-cover"
                   priority
                 />
               </div>
-              <span className="text-sm xs:text-base sm:text-lg md:text-xl lg:text-2xl font-medium text-white">{session.user.name}</span>
+              <span className="text-sm xs:text-base sm:text-lg md:text-xl lg:text-2xl font-medium text-white">
+                {session.user.name}
+              </span>
+              <button
+                onClick={() => setIsStatsModalOpen(true)}
+                className="p-1 xs:p-1.5 rounded-full hover:bg-gray-800 transition-colors"
+                title="View Stats"
+              >
+                <ChartBarIcon className="w-3 h-3 xs:w-4 xs:h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 lg:w-7 lg:h-7" />
+              </button>
               <button
                 onClick={() => signOut()}
-                className="ml-1 xs:ml-1.5 sm:ml-2 p-1 xs:p-1.5 rounded-full hover:bg-gray-800 transition-colors"
+                className="p-1 xs:p-1.5 rounded-full hover:bg-gray-800 transition-colors"
                 title="Logout"
               >
                 <svg className="w-3 h-3 xs:w-4 xs:h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 lg:w-7 lg:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,6 +74,15 @@ export default function HomePage() {
           )}
         </div>
       </header>
+
+      {/* Stats Modal */}
+      {session && (
+        <PlayerStatsModal
+          isOpen={isStatsModalOpen}
+          onClose={() => setIsStatsModalOpen(false)}
+          playerId={session.user.name || ''}
+        />
+      )}
 
       {/* Hero Section - 40vh */}
       <div className="container mx-auto px-2 xs:px-3 sm:px-4 flex items-center">
@@ -94,6 +117,7 @@ export default function HomePage() {
                     src="/Screenshot 2025-03-31 at 17.58.10.png"
                     alt="BUX Poker Gameplay"
                     fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 60vw"
                     className="object-cover"
                     quality={100}
                     priority
