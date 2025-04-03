@@ -41,45 +41,29 @@ export async function GET(
     // Configure @vercel/postgres to use DATABASE_URL
     process.env.POSTGRES_URL = process.env.DATABASE_URL;
 
-    // First, get the player's Discord ID from the players table
-    console.log('API: Querying players table for:', playerId);
-    const playerResult = await sql`
-      SELECT id, "discordId", "discordUsername" 
-      FROM players 
-      WHERE "discordUsername" = ${playerId}
-    `;
-    console.log('API: Player query result:', playerResult.rows);
-
-    if (playerResult.rows.length === 0) {
-      console.log('API: No player found with username:', playerId);
-      return NextResponse.json(defaultStats, { status: 200 });
-    }
-
-    const player = playerResult.rows[0];
-    console.log('API: Found player:', player);
-
-    // Fetch player stats from the view using the player's ID
-    console.log('API: Querying player_stats_view for player ID:', player.id);
+    // Query player stats directly using Discord ID
+    console.log('API: Querying player_stats_view for Discord ID:', playerId);
     const statsResult = await sql`
       SELECT 
-        gamesplayed,
-        topthreefinishes,
-        average_final_position,
-        handsplayed,
-        handswon,
-        preflop_fold_percentage,
-        flop_fold_percentage,
-        turn_fold_percentage,
-        river_fold_percentage,
-        no_fold_percentage,
-        showdown_win_percentage
-      FROM player_stats_view 
-      WHERE id = ${player.id}
+        psv.gamesplayed,
+        psv.topthreefinishes,
+        psv.average_final_position,
+        psv.handsplayed,
+        psv.handswon,
+        psv.preflop_fold_percentage,
+        psv.flop_fold_percentage,
+        psv.turn_fold_percentage,
+        psv.river_fold_percentage,
+        psv.no_fold_percentage,
+        psv.showdown_win_percentage
+      FROM player_stats_view psv
+      JOIN players p ON p.id = psv.id
+      WHERE p."discordId" = ${playerId}
     `;
     console.log('API: Stats query result:', statsResult.rows);
 
     if (statsResult.rows.length === 0) {
-      console.log('API: No stats found for player ID:', player.id);
+      console.log('API: No stats found for Discord ID:', playerId);
       return NextResponse.json(defaultStats, { status: 200 });
     }
 

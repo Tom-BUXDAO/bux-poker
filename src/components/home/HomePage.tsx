@@ -80,7 +80,7 @@ export default function HomePage() {
         <PlayerStatsModal
           isOpen={isStatsModalOpen}
           onClose={() => setIsStatsModalOpen(false)}
-          playerId={session.user.name || ''}
+          playerId={session.user.id || ''}
         />
       )}
 
