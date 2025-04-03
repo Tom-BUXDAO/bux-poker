@@ -20,6 +20,7 @@ const handler = NextAuth({
       authorization: {
         params: {
           scope: "identify email guilds",
+          redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/callback/discord`
         }
       }
     }),
