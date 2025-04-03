@@ -45,17 +45,17 @@ export default function ActionPanel({ currentBet, pot, minBet, onAction, playerC
           <div className="w-[55%] aspect-[1.6] bg-black/50 rounded p-1">
             <div className="h-full flex flex-col justify-between">
               {/* Best Hand */}
-              <div>
-                <span className="text-white uppercase tracking-wider text-scale-base">Best hand</span>
+              <div className="leading-tight">
+                <div className="text-white uppercase tracking-wider text-scale-base">Best hand</div>
                 <div className="text-yellow-400 text-scale-lg text-scale-bold">
                   {evaluateHand(playerCards, communityCards).description}
                 </div>
               </div>
 
               {/* Blinds */}
-              <div>
-                <span className="text-white uppercase tracking-wider text-scale-base">Blinds</span>
-                <div className="flex items-center gap-2">
+              <div className="leading-tight">
+                <div className="text-white uppercase tracking-wider text-scale-base">Blinds</div>
+                <div>
                   <div className="flex items-center gap-1">
                     <span className="text-gray-400 text-scale-base">Current</span>
                     <span className="text-white text-scale-base text-scale-bold">10/20</span>
@@ -68,7 +68,7 @@ export default function ActionPanel({ currentBet, pot, minBet, onAction, playerC
               </div>
 
               {/* Timer */}
-              <div>
+              <div className="leading-tight">
                 <div className="flex items-center gap-1">
                   <span className="text-white uppercase tracking-wider text-scale-base">Next level</span>
                   <span className="text-yellow-400 text-scale-base text-scale-bold">10:00</span>
