@@ -240,9 +240,33 @@ export default function TableUpdatePage() {
                     {seat.player ? (
                       <>
                         {/* Player Info Container */}
-                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 px-3 py-1.5 rounded-sm border border-gray-700 whitespace-nowrap">
-                          <span className="text-white text-scale-base text-scale-bold tracking-wide">{seat.player.name}</span>
-                          <span className="text-yellow-400 text-scale-base text-scale-bold ml-3 tracking-wide">{seat.player.chips.toLocaleString()}</span>
+                        <style jsx>{`
+                          .player-info {
+                            height: min(3vh, 24px);
+                            line-height: min(3vh, 24px);
+                            padding: 0 4px;
+                            font-size: min(1.65vh, 13.5px);
+                          }
+                          @media (min-width: 640px) {
+                            .player-info {
+                              height: min(3vh, 24px);
+                              line-height: min(3vh, 24px);
+                              padding: 0 8px;
+                              font-size: min(1.5vh, 12px);
+                            }
+                          }
+                          @media (min-width: 768px) {
+                            .player-info {
+                              height: min(4vh, 32px);
+                              line-height: min(4vh, 32px);
+                              padding: 0 12px;
+                              font-size: min(1.8vh, 14px);
+                            }
+                          }
+                        `}</style>
+                        <div className="player-info absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm border border-gray-700 bg-black/80">
+                          <span className="text-white font-medium">{seat.player.name}</span>
+                          <span className="text-yellow-400 font-medium ml-1">{seat.player.chips.toLocaleString()}</span>
                         </div>
                         {/* Player Avatar */}
                         <div className={`w-[4.5vw] h-[4.5vw] rounded-full overflow-hidden border-2 bg-gray-800/90 
