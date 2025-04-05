@@ -736,72 +736,8 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
     
     return (
       <div className="relative">
-        {/* Player info container - only shown when seat is occupied */}
-        {player && (
-          <>
-            {/* Player info */}
-            <div className={`absolute ${isBottomHalf ? '-bottom-6' : '-top-6'} left-1/2 transform -translate-x-1/2 bg-gray-900/90 px-4 py-2 whitespace-nowrap z-10 flex items-center gap-2 border-2 ${
-              isWinner 
-                ? 'border-yellow-400 bg-yellow-900/90' 
-                : player?.isCurrent
-                  ? 'border-yellow-500 active-player'
-                  : 'border-gray-600'
-            } rounded ${isFolded ? 'opacity-50' : ''}`}>
-              {!isShowdown || isFolded ? (
-                // Normal display during gameplay or for folded players
-                <>
-              {player.isDealer && (
-                <div className="w-4 h-4 bg-white rounded-full text-black text-[10px] flex items-center justify-center font-bold">
-                  D
-                </div>
-              )}
-              <span className="text-white text-xs font-bold">{player.name}</span>
-              <span className="text-gray-400 text-xs">|</span>
-              <span className="text-yellow-400 text-xs font-bold">{player.chips}</span>
-                </>
-              ) : player.isActive ? (
-                // Show only hand evaluation for active players during showdown
-                <span className="text-green-400 text-xs font-bold">
-                  {evaluateHand(player.cards || [], communityCards).description}
-                </span>
-              ) : null}
-            </div>
-
-            {/* Player Cards - show if player hasn't folded or if it's showdown */}
-            {player.cards && (shouldShowCards ? player.isActive : !isFolded) && (
-              <div className={`absolute ${isBottomHalf ? 'bottom-16' : '-bottom-14'} left-1/2 transform -translate-x-1/2 flex gap-1`}>
-                {player.cards.map((card, i) => (
-                  <div key={i} className="w-12 h-18 relative">
-                    <Image
-                      src={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id 
-                        ? `/cards/${card.rank}${card.suit}.png` 
-                        : '/cards/blue_back.png'}
-                      alt={isShowdown || allPlayersAllIn || player.id === initialPlayer?.id 
-                        ? `${card.rank} of ${card.suit}` 
-                        : 'Card back'}
-                      width={60}
-                      height={90}
-                      className={`w-full h-full object-contain rounded-sm shadow-md ${
-                        isFolded ? 'opacity-50 grayscale' : ''
-                      }`}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Player Bet */}
-            {player.currentBet > 0 && (
-              <ChipStack 
-                amount={player.currentBet} 
-                position={position} 
-              />
-            )}
-          </>
-        )}
-        
         {/* Seat circle */}
-        <div className={`w-20 h-20 rounded-full flex flex-col items-center justify-center overflow-hidden border-2 ${
+        <div className={`relative w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-full flex flex-col items-center justify-center overflow-visible border-2 ${
           isWinner 
             ? 'border-yellow-400 shadow-lg shadow-yellow-400/50' 
             : player?.isCurrent 
@@ -811,16 +747,45 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
           !player ? 'bg-gray-800 opacity-60 font-bold' : 'bg-gray-800'
         }`}>
           {player ? (
-            <Image
-              src={player.avatarUrl || AVATAR_URLS[position - 1]} 
-              alt={player.name}
-              width={80}
-              height={80}
-              sizes="(max-width: 768px) 80px, 120px"
-              className={`w-full h-full object-cover ${isFolded ? 'opacity-50 grayscale' : ''}`}
-            />
+            <>
+              <Image
+                src={player.avatarUrl || AVATAR_URLS[position - 1]} 
+                alt={player.name}
+                width={80}
+                height={80}
+                sizes="(max-width: 768px) 48px, (max-width: 1024px) 64px, 80px"
+                className={`w-full h-full object-cover ${isFolded ? 'opacity-50 grayscale' : ''}`}
+              />
+              {/* Player info */}
+              <div className={`absolute -bottom-12 left-1/2 transform -translate-x-1/2 bg-gray-900/90 px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 whitespace-nowrap z-10 flex items-center gap-1 sm:gap-1.5 md:gap-2 border-2 rounded ${
+                isWinner 
+                  ? 'border-yellow-400 bg-yellow-900/90' 
+                  : player?.isCurrent
+                    ? 'border-yellow-500 active-player'
+                    : 'border-gray-600'
+              } ${isFolded ? 'opacity-50' : ''}`}>
+                {!isShowdown || isFolded ? (
+                  // Normal display during gameplay or for folded players
+                  <>
+                    {player.isDealer && (
+                      <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 bg-white rounded-full text-black text-[8px] sm:text-[9px] md:text-[10px] flex items-center justify-center font-bold">
+                        D
+                      </div>
+                    )}
+                    <span className="text-white text-[10px] sm:text-[11px] md:text-xs font-bold truncate max-w-[4rem] sm:max-w-[6rem] md:max-w-[8rem]">{player.name}</span>
+                    <span className="text-gray-400 text-[10px] sm:text-[11px] md:text-xs">|</span>
+                    <span className="text-yellow-400 text-[10px] sm:text-[11px] md:text-xs font-bold">{player.chips}</span>
+                  </>
+                ) : player.isActive ? (
+                  // Show only hand evaluation for active players during showdown
+                  <span className="text-green-400 text-[10px] sm:text-[11px] md:text-xs font-bold">
+                    {evaluateHand(player.cards || [], communityCards).description}
+                  </span>
+                ) : null}
+              </div>
+            </>
           ) : (
-            <span className="text-white text-xs">EMPTY</span>
+            <span className="text-white text-[8px] sm:text-[10px] md:text-xs">EMPTY</span>
           )}
         </div>
       </div>
@@ -911,7 +876,7 @@ export default function PokerTable({ tableId, currentPlayer: initialPlayer, onCo
               <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
                   {pot > 0 && (
                     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
-                      <PotDisplay amount={pot} />
+                      <PotDisplay mainPot={pot} amount={pot} />
                     </div>
                   )}
 

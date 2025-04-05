@@ -22,7 +22,7 @@ const getChipColor = (value: number): string => {
 
 interface ChipStackProps {
   amount: number;
-  position?: string;
+  position?: TablePosition | string;
 }
 
 export default function ChipStack({ amount, position = '' }: ChipStackProps) {

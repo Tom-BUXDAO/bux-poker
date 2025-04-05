@@ -4,17 +4,18 @@ import React from 'react';
 import ChipStack from './ChipStack';
 
 interface PotDisplayProps {
+  amount?: number;
   mainPot: number;
   sidePots?: { amount: number; eligiblePlayers: string[] }[];
 }
 
-export default function PotDisplay({ mainPot, sidePots = [] }: PotDisplayProps) {
-  const totalPot = mainPot + sidePots.reduce((sum, pot) => sum + pot.amount, 0);
+export default function PotDisplay({ amount, mainPot, sidePots = [] }: PotDisplayProps) {
+  const totalPot = amount || mainPot + sidePots.reduce((sum, pot) => sum + pot.amount, 0);
 
   return (
     <div className="absolute top-[40%] left-1/2 transform -translate-x-1/2 flex flex-col items-center">
       <div className="flex items-center gap-4">
-        <ChipStack amount={mainPot} />
+        <ChipStack amount={totalPot} />
         <div className="text-white text-scale-lg text-scale-bold">
           Total Pot: {totalPot.toLocaleString()}
         </div>
